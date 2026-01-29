@@ -1,101 +1,154 @@
-// package com.project.parking.controller;
+package com.project.parking.controller;
 
-// import com.project.parking.dto.PaymentDTO;
-// import com.project.parking.dto.PaymentStatusUpdateDTO;
-// import com.project.parking.exceptions.DataNotFoundException;
-// import com.project.parking.service.PaymentService;
-// import io.swagger.v3.oas.annotations.Operation;
-// import io.swagger.v3.oas.annotations.responses.ApiResponse;
-// import io.swagger.v3.oas.annotations.responses.ApiResponses;
-// import io.swagger.v3.oas.annotations.tags.Tag;
-// import lombok.RequiredArgsConstructor;
-// import lombok.extern.slf4j.Slf4j;
-// import org.springframework.http.HttpStatus;
-// import org.springframework.http.ResponseEntity;
-// import org.springframework.web.bind.annotation.*;
+import com.project.parking.model.PaymentHistory;
+import com.project.parking.response.Response;
+import com.project.parking.service.PaymentService;
+import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 
-// import java.util.List;
+import java.util.List;
+import java.util.Map;
 
-// @RestController
-// @RequestMapping("/api/payments")
-// @RequiredArgsConstructor
-// @Slf4j
-// @Tag(name = "Quản lý thanh toán", description = "APIs để quản lý các giao dịch thanh toán trong hệ thống")
-// public class PaymentController {
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("${api.v1.prefix}/payments")
+@Tag(name = "Payment", description = "APIs quản lý thanh toán")
+@Slf4j
+public class PaymentController {
 
-//     private final PaymentService paymentService;
+    private final PaymentService paymentService;
 
-//     @Operation(summary = "Lấy danh sách tất cả thanh toán", description = "API này dùng để lấy danh sách tất cả các giao dịch thanh toán trong hệ thống.")
-//     @ApiResponses(value = {
-//             @ApiResponse(responseCode = "200", description = "Lấy danh sách thành công")
-//     })
-//     @GetMapping
-//     public ResponseEntity<List<PaymentDTO>> getAllPayments() {
-//         log.info("Fetching all payments");
-//         List<PaymentDTO> payments = paymentService.getAllPayments();
-//         return ResponseEntity.ok(payments);
-//     }
+    @Operation(summary = "Tạo thanh toán cho member",
+               description = "Tạo link thanh toán MoMo cho member sau khi được duyệt")
+    @PostMapping("/member/{memberId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'MEMBER', 'USER')")
+    public ResponseEntity<Response> createMemberPayment(
+            @Parameter(description = "ID của member") @PathVariable Long memberId) {
+        try {
+            log.info("Creating payment for member: {}", memberId);
+            PaymentHistory payment = paymentService.createMemberPayment(memberId);
+            return ResponseEntity.ok(new Response("success", "Tạo link thanh toán thành công", Map.of(
+                    "paymentId", payment.getId(),
+                    "paymentUrl", payment.getPaymentUrl(),
+                    "amount", payment.getAmount(),
+                    "deadline", payment.getPaymentDeadline()
+            )));
+        } catch (Exception e) {
+            log.error("Error creating payment for member: {}", memberId, e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
 
-//     @Operation(summary = "Lấy thông tin thanh toán theo ID", description = "API này dùng để lấy thông tin chi tiết của một giao dịch thanh toán theo ID.")
-//     @ApiResponses(value = {
-//             @ApiResponse(responseCode = "200", description = "Lấy thông tin thành công"),
-//             @ApiResponse(responseCode = "404", description = "Không tìm thấy thanh toán với ID đã cho")
-//     })
-//     @GetMapping("/{id}")
-//     public ResponseEntity<PaymentDTO> getPaymentById(@PathVariable Long id) throws DataNotFoundException {
-//         log.info("Fetching payment with id: {}", id);
-//         PaymentDTO payment = paymentService.getPaymentById(id);
-//         return ResponseEntity.ok(payment);
-//     }
+    @Hidden
+    @Operation(summary = "MoMo IPN Callback",
+               description = "Callback từ MoMo sau khi thanh toán")
+    @PostMapping("/ipn/{memberId}")
+    public ResponseEntity<Response> handleMoMoIPN(
+            @PathVariable Long memberId,
+            @RequestBody Map<String, Object> payload) {
+        try {
+            log.info("MoMo IPN received for member: {}", memberId);
+            log.info("Payload: {}", payload);
 
-//     @Operation(summary = "Lấy danh sách thanh toán theo phiên gửi xe", description = "API này dùng để lấy danh sách các giao dịch thanh toán liên quan đến một phiên gửi xe cụ thể.")
-//     @ApiResponses(value = {
-//             @ApiResponse(responseCode = "200", description = "Lấy danh sách thành công")
-//     })
-//     @GetMapping("/session/{sessionId}")
-//     public ResponseEntity<List<PaymentDTO>> getPaymentsBySessionId(@PathVariable Long sessionId) {
-//         log.info("Fetching payments for session id: {}", sessionId);
-//         List<PaymentDTO> payments = paymentService.getPaymentsBySessionId(sessionId);
-//         return ResponseEntity.ok(payments);
-//     }
+            paymentService.handleMoMoIPN(memberId, payload);
 
-//     @Operation(summary = "Tạo thanh toán mới", description = "API này dùng để tạo một giao dịch thanh toán mới trong hệ thống.")
-//     @ApiResponses(value = {
-//             @ApiResponse(responseCode = "201", description = "Tạo thanh toán thành công"),
-//             @ApiResponse(responseCode = "400", description = "Dữ liệu không hợp lệ"),
-//             @ApiResponse(responseCode = "404", description = "Không tìm thấy phiên gửi xe liên quan")
-//     })
-//     @PostMapping
-//     public ResponseEntity<PaymentDTO> createPayment(@RequestBody PaymentDTO paymentDTO) throws DataNotFoundException {
-//         log.info("Creating new payment for session id: {}", paymentDTO.getSessionId());
-//         PaymentDTO createdPayment = paymentService.createPayment(paymentDTO);
-//         return new ResponseEntity<>(createdPayment, HttpStatus.CREATED);
-//     }
+            return ResponseEntity.ok(new Response("success", "IPN processed successfully", null));
+        } catch (Exception e) {
+            log.error("Error processing MoMo IPN for member: {}", memberId, e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
 
-//     @Operation(summary = "Cập nhật trạng thái thanh toán", description = "API này dùng để cập nhật trạng thái của một giao dịch thanh toán (PENDING, COMPLETED, FAILED).")
-//     @ApiResponses(value = {
-//             @ApiResponse(responseCode = "200", description = "Cập nhật trạng thái thành công"),
-//             @ApiResponse(responseCode = "400", description = "Trạng thái không hợp lệ"),
-//             @ApiResponse(responseCode = "404", description = "Không tìm thấy thanh toán với ID đã cho")
-//     })
-//     @PatchMapping("/{id}/status")
-//     public ResponseEntity<PaymentDTO> updatePaymentStatus(
-//             @PathVariable Long id,
-//             @RequestBody PaymentStatusUpdateDTO statusUpdateDTO) throws DataNotFoundException {
-//         log.info("Updating payment status for id: {} to {}", id, statusUpdateDTO.getStatus());
-//         PaymentDTO updatedPayment = paymentService.updatePaymentStatus(id, statusUpdateDTO.getStatus());
-//         return ResponseEntity.ok(updatedPayment);
-//     }
+    @Operation(summary = "Xác nhận thanh toán thủ công",
+               description = "Admin xác nhận thanh toán thủ công (tiền mặt, chuyển khoản)")
+    @PostMapping("/{paymentId}/confirm")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER')")
+    public ResponseEntity<Response> confirmPaymentManually(
+            @Parameter(description = "ID của payment") @PathVariable Long paymentId,
+            @Parameter(description = "Phương thức thanh toán") @RequestParam(defaultValue = "CASH") String paymentMethod) {
+        try {
+            log.info("Confirming payment manually: paymentId={}, method={}", paymentId, paymentMethod);
+            PaymentHistory payment = paymentService.confirmPaymentManually(paymentId, paymentMethod);
+            return ResponseEntity.ok(new Response("success", "Xác nhận thanh toán thành công", payment));
+        } catch (Exception e) {
+            log.error("Error confirming payment: {}", paymentId, e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
 
-//     @Operation(summary = "Xóa thanh toán", description = "API này dùng để xóa một giao dịch thanh toán khỏi hệ thống.")
-//     @ApiResponses(value = {
-//             @ApiResponse(responseCode = "204", description = "Xóa thanh toán thành công"),
-//             @ApiResponse(responseCode = "404", description = "Không tìm thấy thanh toán với ID đã cho")
-//     })
-//     @DeleteMapping("/{id}")
-//     public ResponseEntity<Void> deletePayment(@PathVariable Long id) throws DataNotFoundException {
-//         log.info("Deleting payment with id: {}", id);
-//         paymentService.deletePayment(id);
-//         return ResponseEntity.noContent().build();
-//     }
-// }
+    @Operation(summary = "Lấy lịch sử thanh toán của member",
+               description = "Lấy danh sách các giao dịch thanh toán của member")
+    @GetMapping("/member/{memberId}/history")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'MEMBER')")
+    public ResponseEntity<Response> getPaymentHistory(
+            @Parameter(description = "ID của member") @PathVariable Long memberId) {
+        try {
+            List<PaymentHistory> history = paymentService.getPaymentHistory(memberId);
+            return ResponseEntity.ok(new Response("success", "Lấy lịch sử thanh toán thành công", history));
+        } catch (Exception e) {
+            log.error("Error getting payment history for member: {}", memberId, e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
+
+    @Operation(summary = "Lấy thanh toán đang chờ của member",
+               description = "Lấy thông tin giao dịch đang chờ thanh toán của member")
+    @GetMapping("/member/{memberId}/pending")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'MEMBER', 'USER')")
+    public ResponseEntity<Response> getPendingPayment(
+            @Parameter(description = "ID của member") @PathVariable Long memberId) {
+        try {
+            PaymentHistory payment = paymentService.getPendingPayment(memberId);
+            return ResponseEntity.ok(new Response("success", "Lấy thông tin thanh toán thành công", Map.of(
+                    "paymentId", payment.getId(),
+                    "paymentUrl", payment.getPaymentUrl(),
+                    "amount", payment.getAmount(),
+                    "deadline", payment.getPaymentDeadline(),
+                    "status", payment.getPaymentStatus()
+            )));
+        } catch (Exception e) {
+            log.error("Error getting pending payment for member: {}", memberId, e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
+
+    @Operation(summary = "Kiểm tra và khóa member quá hạn thanh toán",
+               description = "Admin chạy thủ công để khóa các member không thanh toán trong 5 ngày")
+    @PostMapping("/check-overdue")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER')")
+    public ResponseEntity<Response> checkOverduePayments() {
+        try {
+            log.info("Checking overdue payments...");
+            int lockedCount = paymentService.lockOverdueMembers();
+            return ResponseEntity.ok(new Response("success", 
+                    "Đã khóa " + lockedCount + " member do quá hạn thanh toán", 
+                    Map.of("lockedCount", lockedCount)));
+        } catch (Exception e) {
+            log.error("Error checking overdue payments", e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
+
+    @Operation(summary = "Gửi email nhắc nhở thanh toán",
+               description = "Gửi email nhắc nhở cho member chưa thanh toán")
+    @PostMapping("/member/{memberId}/remind")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER')")
+    public ResponseEntity<Response> sendPaymentReminder(
+            @Parameter(description = "ID của member") @PathVariable Long memberId) {
+        try {
+            PaymentHistory payment = paymentService.getPendingPayment(memberId);
+            paymentService.sendPaymentReminderEmail(payment.getMember(), payment);
+            return ResponseEntity.ok(new Response("success", "Đã gửi email nhắc nhở thanh toán", null));
+        } catch (Exception e) {
+            log.error("Error sending payment reminder for member: {}", memberId, e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
+}

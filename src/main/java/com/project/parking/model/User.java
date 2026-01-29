@@ -82,6 +82,9 @@ public class User implements UserDetails {
     @Column(name = "address")
     private String address;
 
+    @Column(name = "avatar")
+    private String avatar;
+
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 

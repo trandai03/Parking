@@ -82,7 +82,7 @@ public class UserService {
         userToSave.setPassword(passwordEncoder.encode(userDTO.getPassword()));
         userToSave.setVerificationCode(generateVerificationCode()); // Tạo code mới
         userToSave.setActive(false);
-        userToSave.setFullname(userDTO.getFullName());
+        userToSave.setFullname(userDTO.getFullname());
         userToSave.setDateOfBirth(userDTO.getDateOfBirth());
         userToSave.setPhoneNumber(userDTO.getPhoneNumber());
         userToSave.setVerificationExpiration(LocalDateTime.now().plusMinutes(15)); // Reset thời gian
@@ -174,7 +174,7 @@ public class UserService {
         if (!passwordEncoder.matches(password, userExist.getPassword())) {
             throw new BadCredentialsException("Password not match");
         }
-        if(userExist.getVerificationCode()!=null){
+        if(!userExist.getActive()){
             throw new BadCredentialsException("Unverified user");
         }
         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
@@ -214,17 +214,17 @@ public class UserService {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
         // update user
-        if (userDTO.getFullName() != null) {
-            existingUser.setFullname(userDTO.getFullName());
+        if (userDTO.getFullname() != null) {
+            existingUser.setFullname(userDTO.getFullname());
         }
 
         if (userDTO.getPhoneNumber() != null) {
             existingUser.setPhoneNumber(userDTO.getPhoneNumber());
         }
-        //
-        // if (updatedUserDTO.getAddress() != null) {
-        // existingUser.setAddress(updatedUserDTO.getAddress());
-        // }
+
+         if (userDTO.getAddress() != null) {
+         existingUser.setAddress(userDTO.getAddress());
+         }
         if (userDTO.getDateOfBirth() != null) {
             existingUser.setDateOfBirth(userDTO.getDateOfBirth());
         }
@@ -339,6 +339,16 @@ public class UserService {
     public User findById(Long id) throws DataNotFoundException {
         return userRepository.findById(id)
                 .orElseThrow(() -> new DataNotFoundException("User không tồn tại với ID: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    protected Map<String, String> getAvatarAndNameByUsernames(String username) {
+        User user = userRepository.findByUsername(username).orElse(null);
+            Map<String, String> result = new HashMap<>();
+            result.put("avatar", user.getAvatar());
+            result.put("name", user.getFullname());
+            return result;
+
     }
 
 }

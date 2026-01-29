@@ -51,6 +51,7 @@ out/
 .agent/
 .gemini/
 .copilot/
+.agents/
 
 ### Spring Boot ###
 *.jar

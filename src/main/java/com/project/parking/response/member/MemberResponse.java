@@ -3,6 +3,7 @@ package com.project.parking.response.member;
 import com.project.parking.enums.MemberStatus;
 import com.project.parking.model.Member;
 import com.project.parking.model.User;
+import com.project.parking.model.Vehicle;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -94,6 +96,28 @@ public class MemberResponse {
     @Schema(description = "Thẻ còn hiệu lực")
     private Boolean isValid;
 
+    @Schema(description = "Danh sách xe của member")
+    private List<VehicleInfo> vehicles;
+
+    @Schema(description = "Số phòng của member")
+    private String roomNumber;
+
+
+    @Data
+    @Builder
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class VehicleInfo {
+        @Schema(description = "ID xe")
+        private Long id;
+
+        @Schema(description = "Biển số xe")
+        private String licensePlate;
+
+        @Schema(description = "Loại xe")
+        private String vehicleType;
+    }
+
     public static MemberResponse fromMember(Member member) {
         if (member == null) {
             log.error("MemberResponse fromMember: member is null");
@@ -126,6 +150,7 @@ public class MemberResponse {
                 .createdAt(member.getCreatedAt())
                 .updatedAt(member.getUpdatedAt())
                 .daysRemaining(daysRemaining)
+                .roomNumber(member.getRoomNumber())
                 .isValid(isValid);
 
         // User info
@@ -148,6 +173,20 @@ public class MemberResponse {
         if (member.getParkingPlan() != null) {
             builder.planId(member.getParkingPlan().getId())
                    .planName(member.getParkingPlan().getName());
+        }
+
+        // Vehicle info
+        if (member.getVehicles() != null && !member.getVehicles().isEmpty()) {
+            List<VehicleInfo> vehicleInfos = member.getVehicles().stream()
+                    .map(v -> VehicleInfo.builder()
+                            .id(v.getId())
+                            .licensePlate(v.getLicensePlate())
+                            .vehicleType(v.getVehicleType())
+                            .build())
+                    .collect(Collectors.toList());
+            builder.vehicles(vehicleInfos);
+        } else {
+            builder.vehicles(Collections.emptyList());
         }
 
         return builder.build();

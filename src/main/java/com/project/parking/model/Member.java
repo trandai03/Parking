@@ -10,6 +10,7 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -69,6 +70,9 @@ public class Member {
     @Size(max = 50)
     @Column(name = "room_number", unique = true, length = 50)
     private String roomNumber;
+
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Vehicle> vehicles;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

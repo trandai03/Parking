@@ -2,6 +2,7 @@ package com.project.parking.service;
 
 import com.project.parking.dto.request.*;
 import com.project.parking.enums.MemberStatus;
+import com.project.parking.enums.PaymentStatus;
 import com.project.parking.enums.Role;
 import com.project.parking.exceptions.DataNotFoundException;
 import com.project.parking.exceptions.InvalidOperationException;
@@ -34,6 +35,7 @@ public class MemberService {
     private final VehicleRepository vehicleRepository;
     private final ParkingLotRepository parkingLotRepository;
     private final ParkingPlanRepository parkingPlanRepository;
+    private final PaymentHistoryRepository paymentHistoryRepository;
     private final EmailService emailService;
 
 
@@ -110,7 +112,10 @@ public class MemberService {
                 .orElseThrow(() -> new DataNotFoundException("User không tồn tại với ID: " + userId));
 
         // Check if user already has membership
-        if (memberRepository.existsByUserId(userId)) {
+        
+        Member member = memberRepository.findByUserId(userId).orElse(null);
+
+        if (member != null && member.getMemberStatus() != MemberStatus.PENDING && member.getMemberStatus() != MemberStatus.REJECTED && member.getMemberStatus() != MemberStatus.CANCELLED  ) {
             throw new DataIntegrityViolationException("User đã đăng ký member rồi");
         }
 
@@ -127,21 +132,26 @@ public class MemberService {
         BigDecimal fee = plan.getPrice();
 
 
-        // Generate member code
         String memberCode = generateMemberCode();
 
-        // Calculate expiry date based on parking plan
-        LocalDateTime startDate = LocalDateTime.now();
-        LocalDateTime expiryDate = calculateExpiryDate(startDate, plan);
-
-        // Create member with PENDING status (waiting for owner approval)
         user.setDateOfBirth(request.getDateOfBirth());
         user.setPhoneNumber(request.getPhoneNumber());
         user.setEmail(request.getEmail());
         user.setAddress(request.getAddress());
-        user.setFullname(request.getFullName());
+        user.setFullname(request.getFullname());
         userRepository.save(user);
-        Member member = Member.builder()
+        if (member != null) {
+            member.setParkingLot(parkingLot);
+            member.setParkingPlan(plan);
+            member.setMemberCode(memberCode);
+            member.setMemberStatus(MemberStatus.PENDING);
+            member.setMembershipStartDate(null);
+            member.setMembershipExpiryDate(null);
+            member.setMembershipFee(fee);
+            member.setRoomNumber(request.getRoomNumber());
+            member.setMemberStatus(MemberStatus.PENDING);
+        }else{
+         member = Member.builder()
                 .user(user)
                 .parkingLot(parkingLot)
                 .parkingPlan(plan)
@@ -152,7 +162,7 @@ public class MemberService {
                 .membershipFee(fee)
                 .roomNumber(request.getRoomNumber())
                 .build();
-
+        }
         // Note: User role will be updated to MEMBER only after approval
 
         Member savedMember = memberRepository.save(member);
@@ -160,7 +170,7 @@ public class MemberService {
 
         // Create vehicle if license plate provided
         if (request.getLicensePlate() != null && !request.getLicensePlate().isEmpty()) {
-            createVehicleForMember(user, request.getLicensePlate(), request.getVehicleType());
+            createVehicleForMember(savedMember, request.getLicensePlate(), request.getVehicleType());
         }
 
         // Send pending notification email
@@ -204,14 +214,74 @@ public class MemberService {
         Member approvedMember = memberRepository.save(member);
         log.info("Approved member with id: {}", memberId);
 
-        // Send welcome email
+        // Tạo PaymentHistory cho member
+        PaymentHistory paymentHistory = createPaymentHistoryForMember(approvedMember);
+
+        // Send welcome email với thông tin thanh toán
         try {
-            sendWelcomeEmail(approvedMember);
+            sendWelcomeEmailWithPaymentInfo(approvedMember, paymentHistory);
         } catch (MessagingException e) {
             log.error("Failed to send welcome email to member: {}", user.getEmail(), e);
         }
 
         return MemberResponse.fromMember(approvedMember);
+    }
+
+    /**
+     * Tạo PaymentHistory cho member khi được duyệt
+     */
+    private PaymentHistory createPaymentHistoryForMember(Member member) {
+        String orderId = "MEM" + System.currentTimeMillis() + (int)(Math.random() * 1000);
+        
+        PaymentHistory paymentHistory = PaymentHistory.builder()
+                .member(member)
+                .parkingPlan(member.getParkingPlan())
+                .amount(member.getMembershipFee())
+                .paymentMethod("PENDING") // Chưa chọn phương thức
+                .paymentStatus(PaymentStatus.PENDING)
+                .orderId(orderId)
+                .description("Thanh toán phí thành viên - " + member.getMemberCode())
+                .paymentDeadline(LocalDateTime.now().plusDays(5)) // 5 ngày để thanh toán
+                .build();
+
+        PaymentHistory savedPayment = paymentHistoryRepository.save(paymentHistory);
+        log.info("Created payment history for member {}: orderId={}", member.getId(), orderId);
+
+        return savedPayment;
+    }
+
+    /**
+     * Gửi email chào mừng với thông tin thanh toán
+     */
+    private void sendWelcomeEmailWithPaymentInfo(Member member, PaymentHistory payment) throws MessagingException {
+        User user = member.getUser();
+        String subject = "Đăng ký thành viên được duyệt - Vui lòng thanh toán";
+        String htmlMessage = "<!DOCTYPE html>"
+                + "<html>"
+                + "<head><meta charset=\"UTF-8\"></head>"
+                + "<body style=\"font-family: Arial, sans-serif;\">"
+                + "<div style=\"max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;\">"
+                + "<h2 style=\"color: #4CAF50;\">Chúc mừng! Đăng ký của bạn đã được duyệt</h2>"
+                + "<p>Xin chào <strong>" + user.getFullname() + "</strong>,</p>"
+                + "<p>Đăng ký thành viên của bạn đã được duyệt. Vui lòng thanh toán trong vòng <strong>5 ngày</strong> để kích hoạt thẻ.</p>"
+                + "<div style=\"background-color: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin: 20px 0;\">"
+                + "<h3 style=\"color: #333;\">Thông tin thanh toán:</h3>"
+                + "<p><strong>Mã thẻ:</strong> " + member.getMemberCode() + "</p>"
+                + "<p><strong>Gói:</strong> " + member.getParkingPlan().getName() + "</p>"
+                + "<p><strong>Số tiền:</strong> " + payment.getAmount() + " VND</p>"
+                + "<p><strong>Hạn thanh toán:</strong> <span style=\"color: red;\">" + payment.getPaymentDeadline().toLocalDate() + "</span></p>"
+                + "</div>"
+                + "<div style=\"background-color: #fff3e0; padding: 15px; border-radius: 5px; margin: 20px 0;\">"
+                + "<p style=\"color: #ff9800; margin: 0;\"><strong>⚠️ Lưu ý:</strong> Nếu không thanh toán trong thời hạn, thẻ của bạn sẽ bị khóa.</p>"
+                + "</div>"
+                + "<p>Vui lòng đăng nhập vào hệ thống và thực hiện thanh toán.</p>"
+                + "<p style=\"margin-top: 20px;\">Trân trọng,<br/>Đội ngũ Parking Management</p>"
+                + "</div>"
+                + "</body>"
+                + "</html>";
+
+        emailService.sendVerificationEmail(user.getEmail(), subject, htmlMessage);
+        log.info("Sent welcome email with payment info to member: {}", member.getId());
     }
 
     /**
@@ -292,8 +362,8 @@ public class MemberService {
             user.setEmail(request.getEmail());
         }
 
-        if (request.getFullName() != null) {
-            user.setFullname(request.getFullName());
+        if (request.getFullname() != null) {
+            user.setFullname(request.getFullname());
         }
 
         if (request.getPhoneNumber() != null) {
@@ -423,7 +493,7 @@ public class MemberService {
             member.setMembershipStartDate(startDate);
         }
 
-        LocalDateTime newExpiryDate = calculateExpiryDate(startDate, plan.getPlanType());
+        LocalDateTime newExpiryDate = calculateExpiryDate(startDate, plan);
         BigDecimal fee = plan.getPrice();
 
         member.setParkingPlan(plan);
@@ -473,12 +543,9 @@ public class MemberService {
         log.info("Searching member by license plate: {}", licensePlate);
 
         Optional<Vehicle> vehicle = vehicleRepository.findByLicensePlate(licensePlate);
-        if (vehicle.isPresent() && vehicle.get().getUser() != null) {
-            User user = vehicle.get().getUser();
-            Optional<Member> member = memberRepository.findByUserId(user.getId());
-            if (member.isPresent()) {
-                return MemberResponse.fromMember(member.get());
-            }
+        if (vehicle.isPresent() && vehicle.get().getMember() != null) {
+            Member member = vehicle.get().getMember();
+            return MemberResponse.fromMember(member);
         }
         return null;
     }
@@ -573,33 +640,39 @@ public class MemberService {
      */
     private LocalDateTime calculateExpiryDate(LocalDateTime startDate, ParkingPlan plan) {
         String priceUnit = plan.getPriceUnit().toUpperCase();
-        return switch (priceUnit) {
-            case "HOUR" -> startDate.plusHours(1);
-            case "DAY" -> startDate.plusDays(1);
-            case "MONTH" -> startDate.plusMonths(1);
-            case "QUARTER" -> startDate.plusMonths(3);
-            case "YEAR" -> startDate.plusYears(1);
-            default -> startDate.plusMonths(1); // Default to monthly
-        };
+        switch (priceUnit) {
+            case "HOUR":
+                return startDate.plusHours(1);
+            case "DAY":
+                return startDate.plusDays(1);
+            case "MONTH":
+                return startDate.plusMonths(1);
+            case "QUARTER":
+                return startDate.plusMonths(3);
+            case "YEAR":
+                return startDate.plusYears(1);
+            default:
+                return startDate.plusMonths(1); // Default to monthly
+        }
     }
 
     /**
      * Create vehicle for member
      */
-    private void createVehicleForMember(User user, String licensePlate, String vehicleType) {
+    private void createVehicleForMember(Member member, String licensePlate, String vehicleType) {
         if (vehicleRepository.existsByLicensePlate(licensePlate)) {
             log.warn("Vehicle with license plate {} already exists", licensePlate);
             return;
         }
 
         Vehicle vehicle = new Vehicle();
-        vehicle.setUser(user);
+        vehicle.setMember(member);
         vehicle.setLicensePlate(licensePlate);
         vehicle.setVehicleType(vehicleType != null ? vehicleType : "CAR");
         vehicle.setCreatedAt(LocalDateTime.now());
         
         vehicleRepository.save(vehicle);
-        log.info("Created vehicle {} for member", licensePlate);
+        log.info("Created vehicle {} for member {}", licensePlate, member.getMemberCode());
     }
 
     /**
@@ -681,7 +754,7 @@ public class MemberService {
     /**
      * Calculate fee for a parking plan
      */
-    public BigDecimal calculatePlanFee(Long planId) {
+    public BigDecimal calculatePlanFee(Long planId) throws DataNotFoundException {
         ParkingPlan plan = parkingPlanRepository.findById(planId)
                 .orElseThrow(() -> new DataNotFoundException("Parking plan not found"));
         return plan.getPrice();

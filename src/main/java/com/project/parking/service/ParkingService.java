@@ -334,20 +334,11 @@ public class ParkingService {
      * Kiểm tra xem xe có thuộc về member có thẻ đang hoạt động không
      */
     private boolean isVehicleOwnedByActiveMember(Vehicle vehicle) {
-        if (vehicle.getUser() == null) {
+        if (vehicle.getMember() == null) {
             return false;
         }
 
-        User owner = vehicle.getUser();
-
-        // Tìm Member record thông qua userId
-        var memberOpt = memberRepository.findByUserId(owner.getId());
-
-        if (memberOpt.isEmpty()) {
-            return false; // User không có membership
-        }
-
-        var member = memberOpt.get();
+        var member = vehicle.getMember();
 
         // Kiểm tra member status là ACTIVE
         if (member.getMemberStatus() != MemberStatus.ACTIVE) {
@@ -398,11 +389,8 @@ public class ParkingService {
 
         // Lấy memberCode từ Member model nếu xe thuộc member
         String memberCode = null;
-        if (isMemberVehicle && vehicle.getUser() != null) {
-            var memberOpt = memberRepository.findByUserId(vehicle.getUser().getId());
-            if (memberOpt.isPresent()) {
-                memberCode = memberOpt.get().getMemberCode();
-            }
+        if (isMemberVehicle && vehicle.getMember() != null) {
+            memberCode = vehicle.getMember().getMemberCode();
         }
 
         return ParkingSessionDTO.builder()

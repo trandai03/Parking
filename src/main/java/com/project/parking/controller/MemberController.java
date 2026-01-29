@@ -419,21 +419,7 @@ public class MemberController {
         }
     }
 
-    // ============ PRICING OPERATIONS ============
 
-    @Operation(summary = "Lấy bảng giá gói thành viên", 
-               description = "API này dùng để lấy bảng giá các gói thành viên (tháng/quý/năm)")
-    @GetMapping("/pricing")
-    public ResponseEntity<Response> getMembershipPricing() {
-        try {
-            log.info("Getting membership pricing");
-            Map<String, BigDecimal> fees = memberService.getMembershipFees();
-            return ResponseEntity.ok(new Response("success", "Lấy bảng giá thành công", fees));
-        } catch (Exception e) {
-            log.error("Error getting membership pricing", e);
-            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
-        }
-    }
 
     @Operation(summary = "Tính phí cho gói đăng ký", 
                description = "API này dùng để tính phí cho một gói đăng ký cụ thể")

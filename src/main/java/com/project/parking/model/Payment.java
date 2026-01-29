@@ -45,10 +45,6 @@ public class Payment {
     @Column(name = "payment_status", nullable = false)
     private PaymentStatus paymentStatus = PaymentStatus.PENDING;
 
-    @Size(max = 100)
-    @Column(name = "transaction_id", length = 100)
-    private String transactionId;
-
     @ColumnDefault("CURRENT_TIMESTAMP")
     @Column(name = "payment_time")
     private LocalDateTime paymentTime;

@@ -113,6 +113,10 @@ public class JwtFilter extends OncePerRequestFilter {
                 Pair.of(String.format("%s/users/resend-verification/**", apiPrefix), "POST"),
                 Pair.of(String.format("%s/users/forgot-password/**", apiPrefix), "POST"),
 
+                Pair.of(String.format("%s/ws/**", apiPrefix), "GET"),
+                Pair.of("/ws", "GET"), // WebSocket endpoint without API prefix
+                Pair.of("/ws/**", "GET"), // WebSocket endpoint and sub-paths
+
                 // Me
                 // Pair.of(String.format("%s/users/me/**", apiPrefix), "GET"),
 
@@ -142,7 +146,7 @@ public class JwtFilter extends OncePerRequestFilter {
 
                 Pair.of(String.format("%s/device-tokens", apiPrefix), "POST"),
 
-                //member
+                // member
                 Pair.of(String.format("%s/members/pricing", apiPrefix), "GET"),
                 Pair.of(String.format("%s/members/register", apiPrefix), "POST"),
 

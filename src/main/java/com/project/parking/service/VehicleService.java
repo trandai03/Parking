@@ -2,15 +2,14 @@ package com.project.parking.service;
 
 import com.project.parking.dto.VehicleDTO;
 import com.project.parking.exceptions.DataNotFoundException;
-import com.project.parking.model.User;
+import com.project.parking.model.Member;
 import com.project.parking.model.Vehicle;
-import com.project.parking.repository.UserRepository;
+import com.project.parking.repository.MemberRepository;
 import com.project.parking.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,7 +20,7 @@ import java.util.stream.Collectors;
 public class VehicleService {
     
     private final VehicleRepository vehicleRepository;
-    private final UserRepository userRepository;
+    private final MemberRepository memberRepository;
     
     public List<VehicleDTO> getAllVehicles() {
         return vehicleRepository.findAll().stream()
@@ -48,10 +47,10 @@ public class VehicleService {
         vehicle.setCreatedAt(LocalDateTime.now());
         vehicle.setUpdatedAt(LocalDateTime.now());
         
-        if (vehicleDTO.getUserId() != null) {
-            User user = userRepository.findById(vehicleDTO.getUserId())
-                    .orElseThrow(() -> new DataNotFoundException("User not found with id: " + vehicleDTO.getUserId()));
-            vehicle.setUser(user);
+        if (vehicleDTO.getMemberId() != null) {
+            Member member = memberRepository.findById(vehicleDTO.getMemberId())
+                    .orElseThrow(() -> new DataNotFoundException("Member not found with id: " + vehicleDTO.getMemberId()));
+            vehicle.setMember(member);
         }
         
         Vehicle savedVehicle = vehicleRepository.save(vehicle);
@@ -66,10 +65,10 @@ public class VehicleService {
         vehicle.setVehicleType(vehicleDTO.getVehicleType());
         vehicle.setUpdatedAt(LocalDateTime.now());
         
-        if (vehicleDTO.getUserId() != null) {
-            User user = userRepository.findById(vehicleDTO.getUserId())
-                    .orElseThrow(() -> new DataNotFoundException("User not found with id: " + vehicleDTO.getUserId()));
-            vehicle.setUser(user);
+        if (vehicleDTO.getMemberId() != null) {
+            Member member = memberRepository.findById(vehicleDTO.getMemberId())
+                    .orElseThrow(() -> new DataNotFoundException("Member not found with id: " + vehicleDTO.getMemberId()));
+            vehicle.setMember(member);
         }
         
         Vehicle updatedVehicle = vehicleRepository.save(vehicle);
@@ -86,9 +85,15 @@ public class VehicleService {
     private VehicleDTO convertToDTO(Vehicle vehicle) {
         return VehicleDTO.builder()
                 .id(vehicle.getId())
-                .userId(vehicle.getUser() != null ? vehicle.getUser().getId() : null)
+                .memberId(vehicle.getMember() != null ? vehicle.getMember().getId() : null)
                 .licensePlate(vehicle.getLicensePlate())
                 .vehicleType(vehicle.getVehicleType())
                 .build();
+    }
+
+    public List<VehicleDTO> getVehiclesByMemberId(Long memberId) {
+        return vehicleRepository.findByMemberId(memberId).stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
     }
 }
