@@ -1,23 +1,24 @@
-package com.project.parking.service;
+package com.project.parking.scheduler;
 
+import com.project.parking.service.MemberService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 /**
- * Scheduled service for member-related tasks
+ * Scheduler xử lý các tác vụ tự động liên quan đến member
  */
-@Service
+@Component
 @RequiredArgsConstructor
 @Slf4j
-public class MemberScheduledService {
+public class MemberScheduler {
 
     private final MemberService memberService;
 
     /**
-     * Update expired members status every day at midnight
-     * Cron: "0 0 0 * * ?" = At 00:00:00 every day
+     * Cập nhật trạng thái các member hết hạn
+     * Chạy mỗi ngày lúc 00:00
      */
     @Scheduled(cron = "0 0 0 * * ?")
     public void updateExpiredMembersDaily() {
@@ -31,23 +32,21 @@ public class MemberScheduledService {
     }
 
     /**
-     * Send expiry notification to members 7 days before expiration
-     * Cron: "0 0 9 * * ?" = At 09:00:00 every day
+     * Gửi thông báo cho các member sắp hết hạn (7 ngày trước)
+     * Chạy mỗi ngày lúc 09:00
      */
     @Scheduled(cron = "0 0 9 * * ?")
     public void sendExpiryNotifications() {
         log.info("Starting scheduled task: Send expiry notifications");
         try {
-            // Get members expiring in 7 days
             var expiringMembers = memberService.getMembersExpiringSoon(7);
             log.info("Found {} members expiring in 7 days", expiringMembers.size());
-            
+
             // TODO: Send email notifications to expiring members
             // This can be implemented with EmailService
-            
+
         } catch (Exception e) {
             log.error("Error in scheduled task: Send expiry notifications", e);
         }
     }
 }
-

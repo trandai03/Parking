@@ -57,6 +57,13 @@ public class ParkingPlanService {
         return convertToDTO(plan);
     }
 
+    @Transactional(readOnly = true)
+    public List<ParkingPlanDTO> getAllPlans() {
+        log.info("Getting all plans");
+        List<ParkingPlan> plans = parkingPlanRepository.findAll();
+        return plans.stream().map(this::convertToDTO).collect(Collectors.toList());
+    }
+
     /**
      * Create new parking plan
      */
@@ -89,6 +96,7 @@ public class ParkingPlanService {
                 .isPopular(request.getIsPopular() != null ? request.getIsPopular() : false)
                 .isActive(true)
                 .sortOrder(request.getSortOrder() != null ? request.getSortOrder() : 0)
+                .durationMonths(request.getDurationMonths() != null ? request.getDurationMonths() : 1)
                 .build();
 
         ParkingPlan savedPlan = parkingPlanRepository.save(plan);
@@ -167,6 +175,10 @@ public class ParkingPlanService {
 
         if (request.getSortOrder() != null) {
             plan.setSortOrder(request.getSortOrder());
+        }
+
+        if (request.getDurationMonths() != null) {
+            plan.setDurationMonths(request.getDurationMonths());
         }
 
         ParkingPlan updatedPlan = parkingPlanRepository.save(plan);

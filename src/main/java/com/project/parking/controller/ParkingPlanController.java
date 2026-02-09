@@ -82,6 +82,20 @@ public class ParkingPlanController {
         }
     }
 
+    @Operation(summary = "Lấy tất cả gói", 
+               description = "API này dùng để lấy danh sách tất cả các gói")
+    @GetMapping("/all")
+    public ResponseEntity<Response> getAllPlans() {
+        try {
+            log.info("Getting all plans");
+            List<ParkingPlanDTO> plans = parkingPlanService.getAllPlans();
+            return ResponseEntity.ok(new Response("success", "Lấy danh sách gói thành công", plans));
+        } catch (Exception e) {
+            log.error("Error getting all plans", e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
+
     // ============ OWNER/ADMIN ENDPOINTS ============
 
     @Operation(summary = "Lấy tất cả gói theo bãi đỗ xe (bao gồm inactive)", 

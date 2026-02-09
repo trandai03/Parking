@@ -82,6 +82,9 @@ public class ParkingPlan {
     @Column(name = "sort_order")
     private Integer sortOrder = 0;
 
+    @Column(name = "duration_months")
+    private Integer durationMonths = 1; // Số tháng membership, mặc định 1 tháng
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -99,4 +102,3 @@ public class ParkingPlan {
         this.updatedAt = LocalDateTime.now();
     }
 }
-

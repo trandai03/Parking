@@ -1,8 +1,10 @@
 package com.project.parking.scheduler;
 
-import com.project.parking.enums.PaymentStatus;
-import com.project.parking.model.PaymentHistory;
-import com.project.parking.repository.PaymentHistoryRepository;
+import com.project.parking.enums.InvoiceStatus;
+import com.project.parking.model.Invoice;
+import com.project.parking.model.Member;
+import com.project.parking.repository.InvoiceRepository;
+import com.project.parking.repository.MemberRepository;
 import com.project.parking.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +23,8 @@ import java.util.List;
 public class PaymentScheduler {
 
     private final PaymentService paymentService;
-    private final PaymentHistoryRepository paymentHistoryRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final MemberRepository memberRepository;
 
     /**
      * Kiểm tra và khóa các member không thanh toán quá hạn
@@ -49,16 +52,23 @@ public class PaymentScheduler {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime deadline = now.plusDays(1);
 
-            List<PaymentHistory> nearDeadlinePayments = paymentHistoryRepository.findPaymentsNearDeadline(
-                    PaymentStatus.PENDING, now, deadline);
+            List<Invoice> nearDeadlineInvoices = invoiceRepository.findInvoicesNearDeadline(
+                    InvoiceStatus.UNPAID, now, deadline);
 
             int reminderCount = 0;
-            for (PaymentHistory payment : nearDeadlinePayments) {
+            for (Invoice invoice : nearDeadlineInvoices) {
+                if (invoice.getMemberId() == null)
+                    continue;
+
+                Member member = memberRepository.findById(invoice.getMemberId()).orElse(null);
+                if (member == null)
+                    continue;
+
                 try {
-                    paymentService.sendPaymentReminderEmail(payment.getMember(), payment);
+                    paymentService.sendPaymentReminderEmail(member, invoice);
                     reminderCount++;
                 } catch (Exception e) {
-                    log.error("Failed to send reminder for payment {}", payment.getId(), e);
+                    log.error("Failed to send reminder for invoice {}", invoice.getId(), e);
                 }
             }
 
@@ -80,17 +90,24 @@ public class PaymentScheduler {
             LocalDateTime threeDaysLater = now.plusDays(3);
             LocalDateTime twoDaysLater = now.plusDays(2);
 
-            // Tìm các payment có deadline trong khoảng 2-3 ngày
-            List<PaymentHistory> payments = paymentHistoryRepository.findPaymentsNearDeadline(
-                    PaymentStatus.PENDING, twoDaysLater, threeDaysLater);
+            // Tìm các invoice có deadline trong khoảng 2-3 ngày
+            List<Invoice> invoices = invoiceRepository.findInvoicesNearDeadline(
+                    InvoiceStatus.UNPAID, twoDaysLater, threeDaysLater);
 
             int reminderCount = 0;
-            for (PaymentHistory payment : payments) {
+            for (Invoice invoice : invoices) {
+                if (invoice.getMemberId() == null)
+                    continue;
+
+                Member member = memberRepository.findById(invoice.getMemberId()).orElse(null);
+                if (member == null)
+                    continue;
+
                 try {
-                    paymentService.sendPaymentReminderEmail(payment.getMember(), payment);
+                    paymentService.sendPaymentReminderEmail(member, invoice);
                     reminderCount++;
                 } catch (Exception e) {
-                    log.error("Failed to send early reminder for payment {}", payment.getId(), e);
+                    log.error("Failed to send early reminder for invoice {}", invoice.getId(), e);
                 }
             }
 
@@ -99,5 +116,27 @@ public class PaymentScheduler {
             log.error("Error in scheduled task: Send early payment reminders", e);
         }
     }
-}
 
+    /**
+     * Kiểm tra và đánh dấu các invoice quá hạn thành OVERDUE
+     * Chạy mỗi giờ lúc phút 0
+     */
+    @Scheduled(cron = "0 0 * * * ?")
+    public void checkExpiredInvoices() {
+        log.info("Starting scheduled task: Check expired invoices");
+        try {
+            List<Invoice> overdueInvoices = invoiceRepository.findOverdueInvoices(
+                    InvoiceStatus.UNPAID, LocalDateTime.now());
+
+            for (Invoice invoice : overdueInvoices) {
+                invoice.setStatus(InvoiceStatus.OVERDUE);
+                invoiceRepository.save(invoice);
+                log.info("Marked invoice {} as OVERDUE", invoice.getId());
+            }
+
+            log.info("Scheduled task completed: Checked {} overdue invoices", overdueInvoices.size());
+        } catch (Exception e) {
+            log.error("Error in scheduled task: Check expired invoices", e);
+        }
+    }
+}

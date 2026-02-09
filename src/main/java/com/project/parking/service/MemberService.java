@@ -2,7 +2,6 @@ package com.project.parking.service;
 
 import com.project.parking.dto.request.*;
 import com.project.parking.enums.MemberStatus;
-import com.project.parking.enums.PaymentStatus;
 import com.project.parking.enums.Role;
 import com.project.parking.exceptions.DataNotFoundException;
 import com.project.parking.exceptions.InvalidOperationException;
@@ -35,9 +34,8 @@ public class MemberService {
     private final VehicleRepository vehicleRepository;
     private final ParkingLotRepository parkingLotRepository;
     private final ParkingPlanRepository parkingPlanRepository;
-    private final PaymentHistoryRepository paymentHistoryRepository;
+    private final InvoiceService invoiceService;
     private final EmailService emailService;
-
 
     /**
      * Get all members
@@ -112,10 +110,12 @@ public class MemberService {
                 .orElseThrow(() -> new DataNotFoundException("User không tồn tại với ID: " + userId));
 
         // Check if user already has membership
-        
+
         Member member = memberRepository.findByUserId(userId).orElse(null);
 
-        if (member != null && member.getMemberStatus() != MemberStatus.PENDING && member.getMemberStatus() != MemberStatus.REJECTED && member.getMemberStatus() != MemberStatus.CANCELLED  ) {
+        if (member != null && member.getMemberStatus() != MemberStatus.PENDING
+                && member.getMemberStatus() != MemberStatus.REJECTED
+                && member.getMemberStatus() != MemberStatus.CANCELLED) {
             throw new DataIntegrityViolationException("User đã đăng ký member rồi");
         }
 
@@ -123,14 +123,14 @@ public class MemberService {
         ParkingLot parkingLot = null;
         if (request.getParkingLotId() != null) {
             parkingLot = parkingLotRepository.findById(request.getParkingLotId())
-                    .orElseThrow(() -> new DataNotFoundException("Bãi đỗ xe không tồn tại với ID: " + request.getParkingLotId()));
+                    .orElseThrow(() -> new DataNotFoundException(
+                            "Bãi đỗ xe không tồn tại với ID: " + request.getParkingLotId()));
         }
 
         // Get plan if specified
-                ParkingPlan plan = parkingPlanRepository.findById(request.getPlanId())
-                    .orElseThrow(() -> new DataNotFoundException("Gói không tồn tại với ID: " + request.getPlanId()));
+        ParkingPlan plan = parkingPlanRepository.findById(request.getPlanId())
+                .orElseThrow(() -> new DataNotFoundException("Gói không tồn tại với ID: " + request.getPlanId()));
         BigDecimal fee = plan.getPrice();
-
 
         String memberCode = generateMemberCode();
 
@@ -150,18 +150,18 @@ public class MemberService {
             member.setMembershipFee(fee);
             member.setRoomNumber(request.getRoomNumber());
             member.setMemberStatus(MemberStatus.PENDING);
-        }else{
-         member = Member.builder()
-                .user(user)
-                .parkingLot(parkingLot)
-                .parkingPlan(plan)
-                .memberCode(memberCode)
-                .memberStatus(MemberStatus.PENDING)
-                .membershipStartDate(null) // Will be set when approved
-                .membershipExpiryDate(null) // Will be set when approved
-                .membershipFee(fee)
-                .roomNumber(request.getRoomNumber())
-                .build();
+        } else {
+            member = Member.builder()
+                    .user(user)
+                    .parkingLot(parkingLot)
+                    .parkingPlan(plan)
+                    .memberCode(memberCode)
+                    .memberStatus(MemberStatus.PENDING)
+                    .membershipStartDate(null) // Will be set when approved
+                    .membershipExpiryDate(null) // Will be set when approved
+                    .membershipFee(fee)
+                    .roomNumber(request.getRoomNumber())
+                    .build();
         }
         // Note: User role will be updated to MEMBER only after approval
 
@@ -214,12 +214,12 @@ public class MemberService {
         Member approvedMember = memberRepository.save(member);
         log.info("Approved member with id: {}", memberId);
 
-        // Tạo PaymentHistory cho member
-        PaymentHistory paymentHistory = createPaymentHistoryForMember(approvedMember);
+        // Tạo Invoice cho member (thay vì PaymentHistory)
+        Invoice invoice = invoiceService.createMembershipInvoice(memberId);
 
         // Send welcome email với thông tin thanh toán
         try {
-            sendWelcomeEmailWithPaymentInfo(approvedMember, paymentHistory);
+            sendWelcomeEmailWithPaymentInfo(approvedMember, invoice);
         } catch (MessagingException e) {
             log.error("Failed to send welcome email to member: {}", user.getEmail(), e);
         }
@@ -227,33 +227,13 @@ public class MemberService {
         return MemberResponse.fromMember(approvedMember);
     }
 
-    /**
-     * Tạo PaymentHistory cho member khi được duyệt
-     */
-    private PaymentHistory createPaymentHistoryForMember(Member member) {
-        String orderId = "MEM" + System.currentTimeMillis() + (int)(Math.random() * 1000);
-        
-        PaymentHistory paymentHistory = PaymentHistory.builder()
-                .member(member)
-                .parkingPlan(member.getParkingPlan())
-                .amount(member.getMembershipFee())
-                .paymentMethod("PENDING") // Chưa chọn phương thức
-                .paymentStatus(PaymentStatus.PENDING)
-                .orderId(orderId)
-                .description("Thanh toán phí thành viên - " + member.getMemberCode())
-                .paymentDeadline(LocalDateTime.now().plusDays(5)) // 5 ngày để thanh toán
-                .build();
-
-        PaymentHistory savedPayment = paymentHistoryRepository.save(paymentHistory);
-        log.info("Created payment history for member {}: orderId={}", member.getId(), orderId);
-
-        return savedPayment;
-    }
+    // Phương thức createPaymentHistoryForMember đã được thay thế bởi
+    // invoiceService.createMembershipInvoice()
 
     /**
      * Gửi email chào mừng với thông tin thanh toán
      */
-    private void sendWelcomeEmailWithPaymentInfo(Member member, PaymentHistory payment) throws MessagingException {
+    private void sendWelcomeEmailWithPaymentInfo(Member member, Invoice invoice) throws MessagingException {
         User user = member.getUser();
         String subject = "Đăng ký thành viên được duyệt - Vui lòng thanh toán";
         String htmlMessage = "<!DOCTYPE html>"
@@ -267,9 +247,11 @@ public class MemberService {
                 + "<div style=\"background-color: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin: 20px 0;\">"
                 + "<h3 style=\"color: #333;\">Thông tin thanh toán:</h3>"
                 + "<p><strong>Mã thẻ:</strong> " + member.getMemberCode() + "</p>"
+                + "<p><strong>Mã hóa đơn:</strong> " + invoice.getInvoiceCode() + "</p>"
                 + "<p><strong>Gói:</strong> " + member.getParkingPlan().getName() + "</p>"
-                + "<p><strong>Số tiền:</strong> " + payment.getAmount() + " VND</p>"
-                + "<p><strong>Hạn thanh toán:</strong> <span style=\"color: red;\">" + payment.getPaymentDeadline().toLocalDate() + "</span></p>"
+                + "<p><strong>Số tiền:</strong> " + invoice.getAmount() + " VND</p>"
+                + "<p><strong>Hạn thanh toán:</strong> <span style=\"color: red;\">"
+                + invoice.getPaymentDeadline().toLocalDate() + "</span></p>"
                 + "</div>"
                 + "<div style=\"background-color: #fff3e0; padding: 15px; border-radius: 5px; margin: 20px 0;\">"
                 + "<p style=\"color: #ff9800; margin: 0;\"><strong>⚠️ Lưu ý:</strong> Nếu không thanh toán trong thời hạn, thẻ của bạn sẽ bị khóa.</p>"
@@ -288,7 +270,8 @@ public class MemberService {
      * Reject member registration (Owner only)
      */
     @Transactional
-    public MemberResponse rejectMember(Long memberId, String reason) throws DataNotFoundException, InvalidOperationException {
+    public MemberResponse rejectMember(Long memberId, String reason)
+            throws DataNotFoundException, InvalidOperationException {
         log.info("Rejecting member with id: {}", memberId);
 
         Member member = memberRepository.findById(memberId)
@@ -389,7 +372,8 @@ public class MemberService {
      * Lock member account
      */
     @Transactional
-    public MemberResponse lockMember(Long id, LockMemberRequest request) throws DataNotFoundException, InvalidOperationException {
+    public MemberResponse lockMember(Long id, LockMemberRequest request)
+            throws DataNotFoundException, InvalidOperationException {
         log.info("Locking member with id: {}", id);
 
         Member member = memberRepository.findById(id)
@@ -424,13 +408,13 @@ public class MemberService {
         }
 
         // Check if membership is still valid
-        if (member.getMembershipExpiryDate() != null && 
-            member.getMembershipExpiryDate().isBefore(LocalDateTime.now())) {
+        if (member.getMembershipExpiryDate() != null &&
+                member.getMembershipExpiryDate().isBefore(LocalDateTime.now())) {
             member.setMemberStatus(MemberStatus.EXPIRED);
         } else {
             member.setMemberStatus(MemberStatus.ACTIVE);
         }
-        
+
         member.setLockedAt(null);
         member.setLockReason(null);
 
@@ -469,12 +453,14 @@ public class MemberService {
      * Renew member subscription
      */
     @Transactional
-    public MemberResponse renewMember(Long id, RenewMemberRequest request) throws DataNotFoundException, InvalidOperationException {
+    public MemberResponse renewMember(Long id, RenewMemberRequest request)
+            throws DataNotFoundException, InvalidOperationException {
         log.info("Renewing member with id: {}", id);
 
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new DataNotFoundException("Member không tồn tại với ID: " + id));
-        ParkingPlan plan =  parkingPlanRepository.findById(request.getPlanId()).orElseThrow(() -> new DataNotFoundException("Parking Plan không tồn tại với ID: " + id));
+        ParkingPlan plan = parkingPlanRepository.findById(request.getPlanId())
+                .orElseThrow(() -> new DataNotFoundException("Parking Plan không tồn tại với ID: " + id));
         if (member.getMemberStatus() == MemberStatus.CANCELLED) {
             throw new InvalidOperationException("Không thể gia hạn thẻ đã bị hủy. Vui lòng đăng ký mới.");
         }
@@ -485,8 +471,8 @@ public class MemberService {
 
         // Calculate new expiry date
         LocalDateTime startDate;
-        if (member.getMembershipExpiryDate() != null && 
-            member.getMembershipExpiryDate().isAfter(LocalDateTime.now())) {
+        if (member.getMembershipExpiryDate() != null &&
+                member.getMembershipExpiryDate().isAfter(LocalDateTime.now())) {
             startDate = member.getMembershipExpiryDate();
         } else {
             startDate = LocalDateTime.now();
@@ -529,8 +515,7 @@ public class MemberService {
                 request.getMemberCode(),
                 request.getEmail(),
                 request.getKeyword(),
-                request.getMemberStatus()
-        );
+                request.getMemberStatus());
 
         return MemberResponse.fromMembers(members);
     }
@@ -558,7 +543,7 @@ public class MemberService {
         log.info("Getting member statistics");
 
         Map<String, Object> stats = new HashMap<>();
-        
+
         stats.put("totalMembers", memberRepository.count());
         stats.put("activeMembers", memberRepository.countByMemberStatus(MemberStatus.ACTIVE));
         stats.put("waitingPaymentMembers", memberRepository.countByMemberStatus(MemberStatus.WAITING_PAYMENT));
@@ -566,7 +551,7 @@ public class MemberService {
         stats.put("expiredMembers", memberRepository.countByMemberStatus(MemberStatus.EXPIRED));
         stats.put("cancelledMembers", memberRepository.countByMemberStatus(MemberStatus.CANCELLED));
         stats.put("pendingMembers", memberRepository.countByMemberStatus(MemberStatus.PENDING));
-        
+
         // Count members by plan type instead of membership type
         stats.put("monthlyMembers", memberRepository.countByParkingPlanPriceUnit("MONTH"));
         stats.put("quarterlyMembers", memberRepository.countByParkingPlanPriceUnit("QUARTER"));
@@ -574,9 +559,8 @@ public class MemberService {
 
         // Members expiring in next 7 days
         List<Member> expiringMembers = memberRepository.findMembersExpiringBefore(
-                LocalDateTime.now(), 
-                LocalDateTime.now().plusDays(7)
-        );
+                LocalDateTime.now(),
+                LocalDateTime.now().plusDays(7));
         stats.put("membersExpiringIn7Days", expiringMembers.size());
 
         return stats;
@@ -590,8 +574,7 @@ public class MemberService {
         log.info("Getting members expiring in {} days", days);
         List<Member> members = memberRepository.findMembersExpiringBefore(
                 LocalDateTime.now(),
-                LocalDateTime.now().plusDays(days)
-        );
+                LocalDateTime.now().plusDays(days));
         return MemberResponse.fromMembers(members);
     }
 
@@ -602,14 +585,14 @@ public class MemberService {
     public int updateExpiredMembers() {
         log.info("Updating expired members status");
         List<Member> expiredMembers = memberRepository.findExpiredMembers(LocalDateTime.now());
-        
+
         for (Member member : expiredMembers) {
             member.setMemberStatus(MemberStatus.EXPIRED);
         }
-        
+
         memberRepository.saveAll(expiredMembers);
         log.info("Updated {} expired members", expiredMembers.size());
-        
+
         return expiredMembers.size();
     }
 
@@ -626,12 +609,12 @@ public class MemberService {
         String year = String.valueOf(Year.now().getValue());
         Long count = memberRepository.count() + 1;
         String code = String.format("MEM-%s-%05d", year, count);
-        
+
         while (memberRepository.existsByMemberCode(code)) {
             count++;
             code = String.format("MEM-%s-%05d", year, count);
         }
-        
+
         return code;
     }
 
@@ -670,7 +653,7 @@ public class MemberService {
         vehicle.setLicensePlate(licensePlate);
         vehicle.setVehicleType(vehicleType != null ? vehicleType : "CAR");
         vehicle.setCreatedAt(LocalDateTime.now());
-        
+
         vehicleRepository.save(vehicle);
         log.info("Created vehicle {} for member {}", licensePlate, member.getMemberCode());
     }
