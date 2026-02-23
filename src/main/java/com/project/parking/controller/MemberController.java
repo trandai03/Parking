@@ -43,11 +43,8 @@ public class MemberController {
     })
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'EMPLOYEE')")
-    public ResponseEntity<Response> getAllMembers(
-            @Parameter(description = "Số trang (bắt đầu từ 0)") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Số phần tử mỗi trang") @RequestParam(defaultValue = "10") int size) {
+    public ResponseEntity<Response> getAllMembers() {
         try {
-            log.info("Getting all members - page: {}, size: {}", page, size);
             List<MemberResponse> members = memberService.getAllMembers();
             return ResponseEntity.ok(new Response("success", "Lấy danh sách member thành công", members));
         } catch (Exception e) {
@@ -76,25 +73,25 @@ public class MemberController {
         }
     }
 
-    @Operation(summary = "Lấy thông tin member theo mã thẻ", 
-               description = "API này dùng để lấy thông tin thành viên theo mã thẻ member")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Lấy thông tin thành công"),
-            @ApiResponse(responseCode = "404", description = "Không tìm thấy member")
-    })
-    @GetMapping("/code/{memberCode}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'EMPLOYEE')")
-    public ResponseEntity<Response> getMemberByCode(
-            @Parameter(description = "Mã thẻ member") @PathVariable String memberCode) {
-        try {
-            log.info("Getting member by code: {}", memberCode);
-            MemberResponse member = memberService.getMemberByCode(memberCode);
-            return ResponseEntity.ok(new Response("success", "Lấy thông tin member thành công", member));
-        } catch (Exception e) {
-            log.error("Error getting member by code: {}", memberCode, e);
-            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
-        }
-    }
+     @Operation(summary = "Lấy thông tin member theo mã thẻ",
+                description = "API này dùng để lấy thông tin thành viên theo mã thẻ member")
+     @ApiResponses(value = {
+             @ApiResponse(responseCode = "200", description = "Lấy thông tin thành công"),
+             @ApiResponse(responseCode = "404", description = "Không tìm thấy member")
+     })
+     @GetMapping("/code/{memberCode}")
+     @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'EMPLOYEE')")
+     public ResponseEntity<Response> getMemberByCode(
+             @Parameter(description = "Mã thẻ member") @PathVariable String memberCode) {
+         try {
+             log.info("Getting member by code: {}", memberCode);
+             MemberResponse member = memberService.getMemberByCode(memberCode);
+             return ResponseEntity.ok(new Response("success", "Lấy thông tin member thành công", member));
+         } catch (Exception e) {
+             log.error("Error getting member by code: {}", memberCode, e);
+             return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+         }
+     }
 
     // ============ SEARCH OPERATIONS ============
 
@@ -103,12 +100,19 @@ public class MemberController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Tìm kiếm thành công")
     })
-    @PostMapping("/search")
+    @GetMapping("/search")
     @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'EMPLOYEE')")
-    public ResponseEntity<Response> searchMembers(@RequestBody MemberSearchRequest request) {
+    public ResponseEntity<Response> searchMembers(
+            @RequestParam(required = false) Long parkingLotId,
+            @RequestParam(required = false) String phoneNumber,
+            @RequestParam(required = false) String licensePlate,
+            @RequestParam(required = false) String memberCode,
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) MemberStatus memberStatus) {
         try {
-            log.info("Searching members with criteria: {}", request);
-            List<MemberResponse> members = memberService.searchMembers(request);
+            log.info("Searching members with criteria: " + parkingLotId + " " + phoneNumber + " " + licensePlate + " " + memberCode + " " + email + " " + keyword + " " + memberStatus);
+            List<MemberResponse> members = memberService.searchMembers(parkingLotId, phoneNumber, licensePlate, memberCode, email, keyword, memberStatus);
             return ResponseEntity.ok(new Response("success", "Tìm kiếm thành công", members));
         } catch (Exception e) {
             log.error("Error searching members", e);
@@ -116,43 +120,33 @@ public class MemberController {
         }
     }
 
-    @Operation(summary = "Tìm member theo số điện thoại", 
-               description = "API tìm kiếm nhanh theo số điện thoại")
-    @GetMapping("/search/phone/{phoneNumber}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'EMPLOYEE')")
-    public ResponseEntity<Response> searchByPhone(
-            @Parameter(description = "Số điện thoại") @PathVariable String phoneNumber,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        try {
-            MemberSearchRequest request = MemberSearchRequest.builder()
-                    .phoneNumber(phoneNumber)
-                    .page(page)
-                    .size(size)
-                    .build();
-            Page<MemberResponse> members = (Page<MemberResponse>) memberService.searchMembers(request);
-            return ResponseEntity.ok(new Response("success", "Tìm kiếm thành công", members));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
-        }
-    }
+    // @Operation(summary = "Tìm member theo số điện thoại", 
+    //            description = "API tìm kiếm nhanh theo số điện thoại")
+    // @GetMapping("/search/phone/{phoneNumber}")
+    // @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'EMPLOYEE')")
+    // public ResponseEntity<Response> searchByPhone(
+    //         @Parameter(description = "Số điện thoại") @PathVariable String phoneNumber) {
+    //     try {
+    //         List<MemberResponse> members = memberService.searchMembers(null, phoneNumber, null, null, null, null, null);
+    //         return ResponseEntity.ok(new Response("success", "Tìm kiếm thành công", members));
+    //     } catch (Exception e) {
+    //         return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+    //     }
+    // }
 
-    @Operation(summary = "Tìm member theo biển số xe", 
-               description = "API tìm kiếm member thông qua biển số xe đã đăng ký")
-    @GetMapping("/search/license-plate/{licensePlate}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'EMPLOYEE')")
-    public ResponseEntity<Response> searchByLicensePlate(
-            @Parameter(description = "Biển số xe") @PathVariable String licensePlate) {
-        try {
-            MemberSearchRequest request = MemberSearchRequest.builder()
-                    .licensePlate(licensePlate)
-                    .build();
-            List<MemberResponse> members = memberService.searchMembers(request);
-            return ResponseEntity.ok(new Response("success", "Tìm kiếm thành công", members));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
-        }
-    }
+    // @Operation(summary = "Tìm member theo biển số xe", 
+    //            description = "API tìm kiếm member thông qua biển số xe đã đăng ký")
+    // @GetMapping("/search/license-plate/{licensePlate}")
+    // @PreAuthorize("hasAnyRole('ADMIN', 'OWNER', 'EMPLOYEE')")
+    // public ResponseEntity<Response> searchByLicensePlate(
+    //         @Parameter(description = "Biển số xe") @PathVariable String licensePlate) {
+    //     try {
+    //         List<MemberResponse> members = memberService.searchMembers(null, null, licensePlate, null, null, null, null);
+    //         return ResponseEntity.ok(new Response("success", "Tìm kiếm thành công", members));
+    //     } catch (Exception e) {
+    //         return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+    //     }
+    // }
 
     // ============ USER REGISTER MEMBER ============
 
@@ -289,6 +283,27 @@ public class MemberController {
             return ResponseEntity.ok(new Response("success", "Cập nhật thông tin thành công", member));
         } catch (Exception e) {
             log.error("Error updating member: {}", id, e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
+
+    @Operation(summary = "Cập nhật trạng thái member", 
+               description = "API này dùng để cập nhật trạng thái của thành viên")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Cập nhật thành công"),
+            @ApiResponse(responseCode = "404", description = "Không tìm thấy member")
+    })
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER')")
+    public ResponseEntity<Response> updateMemberStatus(
+            @Parameter(description = "ID của member") @PathVariable Long id,
+            @RequestBody @Valid StatusMemberRequest request) {
+        try {
+            log.info("Updating member status: {}", id);
+            MemberResponse member = memberService.updateMemberStatus(id, request.getMemberStatus());
+            return ResponseEntity.ok(new Response("success", "Cập nhật trạng thái thành công", member));
+        } catch (Exception e) {
+            log.error("Error updating member status: {}", id, e);
             return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
         }
     }

@@ -71,7 +71,7 @@ public class Member {
     @Column(name = "room_number", unique = true, length = 50)
     private String roomNumber;
 
-    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY,orphanRemoval = true)
     private List<Vehicle> vehicles;
 
     @Column(name = "created_at")

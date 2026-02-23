@@ -18,10 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.Year;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -361,10 +359,52 @@ public class MemberService {
             user.setAddress(request.getAddress());
         }
 
+        if (request.getVehicles() != null) {
+            List<Vehicle> existingVehicles = member.getVehicles();
+
+            List<Vehicle> updatedVehicles = new ArrayList<>();
+
+            for (VehicleRequest req : request.getVehicles()) {
+                Optional<Vehicle> existingMatch = existingVehicles.stream()
+                        .filter(v -> v.getLicensePlate().equals(req.getLicensePlate()))
+                        .findFirst();
+
+                if (existingMatch.isPresent()) {
+                    Vehicle v = existingMatch.get();
+                    v.setVehicleType(req.getVehicleType());
+                    updatedVehicles.add(v);
+                } else {
+                    Vehicle newVehicle = Vehicle.builder()
+                            .vehicleType(req.getVehicleType())
+                            .licensePlate(req.getLicensePlate())
+                            .member(member) // Ensure bidirectional link if needed
+                            .build();
+                    updatedVehicles.add(newVehicle);
+                }
+            }
+
+            member.getVehicles().clear();
+            member.getVehicles().addAll(updatedVehicles);
+        }
+        
+
         userRepository.save(user);
         Member updatedMember = memberRepository.save(member);
         log.info("Updated member with id: {}", id);
 
+        return MemberResponse.fromMember(updatedMember);
+    }
+
+    /**
+     * Update member status
+     */
+    @Transactional
+    public MemberResponse updateMemberStatus(Long memberId, MemberStatus memberStatus) throws DataNotFoundException {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new DataNotFoundException("Member không tồn tại với ID: " + memberId));
+        member.setMemberStatus(memberStatus);
+        Member updatedMember = memberRepository.save(member);
+        log.info("Updated member with id: {}", member.getId());
         return MemberResponse.fromMember(updatedMember);
     }
 
@@ -497,25 +537,26 @@ public class MemberService {
      * Search members with multiple criteria
      */
     @Transactional(readOnly = true)
-    public List<MemberResponse> searchMembers(MemberSearchRequest request) {
-        log.info("Searching members with criteria: {}", request);
+    public List<MemberResponse> searchMembers(Long parkingLotId, String phoneNumber, String licensePlate, String memberCode, String email, String keyword, MemberStatus memberStatus) {
+        log.info("Searching members with criteria: " + phoneNumber + " " + licensePlate + " " + memberCode + " " + email + " " + keyword + " " + memberStatus);
 
         // If searching by license plate, find user through vehicle first
-        if (request.getLicensePlate() != null && !request.getLicensePlate().isEmpty()) {
-            MemberResponse member = searchMemberByLicensePlate(request.getLicensePlate());
-            if (member != null) {
-                return List.of(member);
-            }
-            return List.of();
-        }
+        // if (licensePlate != null && !licensePlate.isEmpty()) {
+        //     MemberResponse member = searchMemberByLicensePlate(licensePlate);
+        //     if (member != null) {
+        //         return List.of(member);
+        //     }
+        //     return List.of();
+        // }
 
         List<Member> members = memberRepository.searchMembers(
-                null, // parkingLotId can be added to request
-                request.getPhoneNumber(),
-                request.getMemberCode(),
-                request.getEmail(),
-                request.getKeyword(),
-                request.getMemberStatus());
+                parkingLotId,
+                phoneNumber,
+                licensePlate,
+                memberCode,
+                email,
+                keyword,
+                memberStatus);
 
         return MemberResponse.fromMembers(members);
     }

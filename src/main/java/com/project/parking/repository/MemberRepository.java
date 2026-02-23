@@ -95,6 +95,7 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     @Query("SELECT m FROM Member m JOIN m.user u WHERE " +
            "(:parkingLotId IS NULL OR m.parkingLot.id = :parkingLotId) " +
            "AND (:phoneNumber IS NULL OR u.phoneNumber LIKE %:phoneNumber%) " +
+           "AND (:licensePlate IS NULL OR EXISTS (SELECT v FROM Vehicle v WHERE v.member = m AND v.licensePlate LIKE %:licensePlate%)) " +
            "AND (:memberCode IS NULL OR m.memberCode LIKE %:memberCode%) " +
            "AND (:email IS NULL OR LOWER(u.email) LIKE LOWER(CONCAT('%', :email, '%'))) " +
            "AND (:keyword IS NULL OR LOWER(u.fullname) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
@@ -103,6 +104,7 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     List<Member> searchMembers(
             @Param("parkingLotId") Long parkingLotId,
             @Param("phoneNumber") String phoneNumber,
+            @Param("licensePlate") String licensePlate,
             @Param("memberCode") String memberCode,
             @Param("email") String email,
             @Param("keyword") String keyword,

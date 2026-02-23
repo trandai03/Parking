@@ -52,19 +52,33 @@ public class PaymentController {
     }
 
     @Operation(summary = "MoMo IPN Callback", description = "Callback từ MoMo sau khi thanh toán")
-    @PostMapping("/ipn/{memberId}")
+    @PostMapping("/ipn")
     public ResponseEntity<Response> handleMoMoIPN(
-            @PathVariable Long memberId,
             @RequestBody Map<String, Object> payload) {
         try {
-            log.info("MoMo IPN received for member: {}", memberId);
+//            log.info("MoMo IPN received for member: {}", memberId);
             log.info("Payload: {}", payload);
 
-            paymentService.handleMoMoIPN(memberId, payload);
+            paymentService.handleMoMoIPN( payload);
 
             return ResponseEntity.ok(new Response("success", "IPN processed successfully", null));
         } catch (Exception e) {
-            log.error("Error processing MoMo IPN for member: {}", memberId, e);
+//            log.error("Error processing MoMo IPN for member: {}", memberId, e);
+            return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
+        }
+    }
+
+    @Operation(summary = "Xác nhận thanh toán thành công", description = "Admin xác nhận thanh toán thủ công (tiền mặt, chuyển khoản)")
+    @PostMapping("/confirm/{paymentId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER')")
+    public ResponseEntity<Response> confirmPaymentSuccess(
+            @Parameter(description = "ID của payment") @PathVariable Long paymentId) {
+        try {
+            log.info("Confirming payment successfully: paymentId={}", paymentId);
+            PaymentHistory payment = paymentService.confirmPaymentSuccess(paymentId);
+            return ResponseEntity.ok(new Response("success", "Xác nhận thanh toán thành công", payment));
+        } catch (Exception e) {
+            log.error("Error confirming payment for payment: {}", paymentId, e);
             return ResponseEntity.badRequest().body(new Response("error", e.getMessage(), null));
         }
     }
