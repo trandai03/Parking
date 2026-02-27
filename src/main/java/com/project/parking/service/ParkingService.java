@@ -4,17 +4,12 @@ import com.project.parking.dto.LicensePlateRecognitionDTO;
 import com.project.parking.dto.ParkingSessionDTO;
 import com.project.parking.dto.request.ParkingSessionRequest;
 import com.project.parking.enums.MemberStatus;
+import com.project.parking.enums.PaymentStatus;
 import com.project.parking.enums.Role;
 import com.project.parking.exceptions.DataNotFoundException;
 import com.project.parking.exceptions.InvalidOperationException;
-import com.project.parking.model.ParkingLot;
-import com.project.parking.model.ParkingSession;
-import com.project.parking.model.User;
-import com.project.parking.model.Vehicle;
-import com.project.parking.repository.MemberRepository;
-import com.project.parking.repository.ParkingLotRepository;
-import com.project.parking.repository.ParkingSessionRepository;
-import com.project.parking.repository.VehicleRepository;
+import com.project.parking.model.*;
+import com.project.parking.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -42,6 +37,8 @@ public class ParkingService {
     private final CloudinaryService cloudinaryService;
     private final UserService userService;
     private final MemberRepository memberRepository;
+    private final PaymentHistoryRepository paymentHistoryRepository;
+    private final PaymentService paymentService;
 
     /**
      * Lấy tất cả các phiên gửi xe
@@ -136,6 +133,7 @@ public class ParkingService {
         session.setVehicleId(vehicle.getId());
         session.setEntryTime(LocalDateTime.now());
         session.setLicensePlateImageEntry(cloudinaryService.storeFile(image));
+        session.setLicensePlate(vehicle.getLicensePlate());
         session.setStatus("ACTIVE");
         session.setCreatedAt(LocalDateTime.now());
         session.setUpdatedAt(LocalDateTime.now());
@@ -147,64 +145,7 @@ public class ParkingService {
         return convertToDTO(savedSession);
     }
 
-    /**
-     * Tạo phiên gửi xe mới với nhận diện biển số tự động
-     */
-    // @Transactional
-    // public ParkingSessionDTO createEntrySessionWithRecognition(Long lotId,
-    // MultipartFile licensePlateImage)
-    // throws IOException, DataNotFoundException, InvalidOperationException {
-    // // Nhận diện biển số xe
-    // String licensePlate =
-    // licensePlateRecognitionService.recognizeLicensePlate(licensePlateImage);
-    // if (licensePlate == null) {
-    // throw new InvalidOperationException("Không thể nhận diện biển số xe");
-    // }
-    //
-    // // Kiểm tra bãi đỗ xe
-    // ParkingLot parkingLot = parkingLotRepository.findById(lotId)
-    // .orElseThrow(() -> new DataNotFoundException("Bãi đỗ xe không tồn tại với ID:
-    // " + lotId));
-    //
-    // if (parkingLot.getAvailableSlots() <= 0) {
-    // throw new InvalidOperationException("Bãi đỗ xe đã hết chỗ");
-    // }
-    //
-    // // Tìm hoặc tạo xe mới
-    // Vehicle vehicle = vehicleRepository.findByLicensePlate(licensePlate)
-    // .orElseGet(() -> {
-    // Vehicle newVehicle = new Vehicle();
-    // newVehicle.setLicensePlate(licensePlate);
-    // newVehicle.setVehicleType("UNKNOWN"); // Thiết lập loại xe mặc định
-    // return vehicleRepository.save(newVehicle);
-    // });
-    //
-    // // Kiểm tra xem xe đã có phiên gửi xe đang hoạt động chưa
-    // boolean hasActiveSession =
-    // parkingSessionRepository.findActiveSessionByVehicleId(vehicle.getId())
-    // .isPresent();
-    // if (hasActiveSession) {
-    // throw new InvalidOperationException("Xe đã có phiên gửi xe đang hoạt động");
-    // }
-    //
-    // // Tạo phiên gửi xe mới
-    // ParkingSession session = new ParkingSession();
-    // session.setLot(parkingLot);
-    // session.setVehicleId(vehicle.getId());
-    // session.setEntryTime(LocalDateTime.now());
-    // session.setLicensePlateImageEntry(cloudinaryService.storeFile(licensePlateImage));
-    // session.setStatus("ACTIVE");
-    // session.setCreatedAt(LocalDateTime.now());
-    // session.setUpdatedAt(LocalDateTime.now());
-    //
-    // ParkingSession savedSession = parkingSessionRepository.save(session);
-    //
-    // // Cập nhật số lượng chỗ trống
-    // parkingLot.setAvailableSlots(parkingLot.getAvailableSlots() - 1);
-    // parkingLotRepository.save(parkingLot);
-    //
-    // return convertToDTO(savedSession);
-    // }
+
 
     /**
      * Hoàn thành phiên gửi xe với ID và biển số
@@ -231,12 +172,12 @@ public class ParkingService {
 
         BigDecimal totalCost;
 
-        // Kiểm tra xem xe có thuộc về member có thẻ đang hoạt động không
-        if (vehicle != null && isVehicleOwnedByActiveMember(vehicle)) {
-            // Member không phải trả phí theo giờ/ngày (đã đóng phí tháng/quý/năm)
-            totalCost = BigDecimal.ZERO;
-            log.info("Vehicle {} belongs to active member - no parking fee charged", vehicle.getLicensePlate());
-        } else {
+//        // Kiểm tra xem xe có thuộc về member có thẻ đang hoạt động không
+//        if (vehicle != null && isVehicleOwnedByActiveMember(vehicle)) {
+//            // Member không phải trả phí theo giờ/ngày (đã đóng phí tháng/quý/năm)
+//            totalCost = BigDecimal.ZERO;
+//            log.info("Vehicle {} belongs to active member - no parking fee charged", vehicle.getLicensePlate());
+//        } else {
             // Tính phí bình thường cho khách vãng lai
             BigDecimal hourlyRate = session.getLot().getHourlyRate() != null ? session.getLot().getHourlyRate()
                     : BigDecimal.valueOf(10000); // Giá mặc định nếu không có
@@ -255,7 +196,7 @@ public class ParkingService {
                 totalCost = dailyRate.multiply(BigDecimal.valueOf(days))
                         .add(hourlyRate.multiply(BigDecimal.valueOf(remainingHours)));
             }
-        }
+//        }
 
         session.setTotalCost(totalCost);
         session.setStatus("COMPLETED");
@@ -275,7 +216,7 @@ public class ParkingService {
      */
     @Transactional
     public ParkingSessionDTO completeExitSessionWithRecognition(Integer code, MultipartFile licensePlateImage,
-            String licensePlate)
+            String licensePlate, String paymentMethod)
             throws IOException, DataNotFoundException, InvalidOperationException {
         // Tìm phiên gửi xe
         ParkingSession session = parkingSessionRepository.findByCode(code)
@@ -289,56 +230,189 @@ public class ParkingService {
         if (!vehicle.getLicensePlate().equalsIgnoreCase(licensePlate)) {
             throw new InvalidOperationException("Biển số xe không khớp với phiên gửi xe");
         }
-
-        // Tính phí gửi xe
+        PaymentHistory paymentHistory = paymentHistoryRepository.findBySessionId(session.getId())
+                .orElseThrow(() -> new DataNotFoundException("Lịch sử thanh toán không tồn tại với code: " + code));
+        paymentHistory.setPaymentStatus(PaymentStatus.COMPLETED);
+        paymentHistory.setPaymentTime(LocalDateTime.now());
+        paymentHistoryRepository.save(paymentHistory);
+        ParkingLot parkingLot = session.getLot();
         LocalDateTime exitTime = LocalDateTime.now();
-        BigDecimal totalCost;
-
-        // Kiểm tra xem xe có thuộc về member có thẻ đang hoạt động không
-        if (isVehicleOwnedByActiveMember(vehicle)) {
-            // Member không phải trả phí theo giờ/ngày (đã đóng phí tháng/quý/năm)
-            totalCost = BigDecimal.ZERO;
-            log.info("Vehicle {} belongs to active member - no parking fee charged", vehicle.getLicensePlate());
-        } else {
-            // Tính phí bình thường cho khách vãng lai
-            long minutes = ChronoUnit.MINUTES.between(session.getEntryTime(), exitTime);
-            long hours = (minutes + 59) / 60; // Làm tròn lên giờ
-            ParkingLot parkingLot = session.getLot();
-
-            if (hours < 24) {
-                totalCost = parkingLot.getHourlyRate().multiply(BigDecimal.valueOf(hours));
-            } else {
-                long days = hours / 24;
-                long remainingHours = hours % 24;
-                totalCost = parkingLot.getDailyRate().multiply(BigDecimal.valueOf(days))
-                        .add(parkingLot.getHourlyRate().multiply(BigDecimal.valueOf(remainingHours)));
-            }
-        }
-
         // Cập nhật phiên gửi xe
         session.setExitTime(exitTime);
         session.setLicensePlateImageExit(cloudinaryService.storeFile(licensePlateImage));
         session.setStatus("COMPLETED");
-        session.setTotalCost(totalCost);
         session.setUpdatedAt(LocalDateTime.now());
         ParkingSession savedSession = parkingSessionRepository.save(session);
 
         // Cập nhật số lượng chỗ trống
+        parkingLot.setAvailableSlots(parkingLot.getAvailableSlots() + 1);
+        parkingLotRepository.save(parkingLot);
+        return convertToDTO(savedSession);
+    }
+
+//    public String createParkingPaymentUrl(Integer code, BigDecimal totalCost) throws DataNotFoundException {
+//        String paymentUrl = paymentService.createParkingPaymentUrl(totalCost);
+//        ParkingSession session = parkingSessionRepository.findByCode(code)
+//                .orElseThrow(() -> new DataNotFoundException("Phiên gửi xe không tồn tại với code: " + code));
+//        PaymentHistory paymentHistory = PaymentHistory.builder()
+//                .paymentStatus(PaymentStatus.PENDING)
+//                .paymentMethod("MOMO")
+//                .amount(totalCost)
+//                .paymentUrl(paymentUrl)
+//                .build();
+//        paymentHistoryRepository.save(paymentHistory);
+//        return paymentUrl;
+//    }
+
+    public BigDecimal caculateTotalCost(Integer code) throws DataNotFoundException, InvalidOperationException {
+        // Tìm phiên gửi xe
+        ParkingSession session = parkingSessionRepository.findByCode(code)
+                .orElseThrow(() -> new DataNotFoundException("Phiên gửi xe không tồn tại với code: " + code));
+        if (!session.getStatus().equals("ACTIVE")) {
+            throw new InvalidOperationException("Phiên gửi xe đã kết thúc");
+        }
+        LocalDateTime exitTime = LocalDateTime.now();
+        BigDecimal totalCost;
+        long minutes = ChronoUnit.MINUTES.between(session.getEntryTime(), exitTime);
+        long hours = (minutes + 59) / 60; // Làm tròn lên giờ
+        ParkingLot parkingLot = session.getLot();
+
+        if (hours < 24) {
+            totalCost = parkingLot.getHourlyRate().multiply(BigDecimal.valueOf(hours));
+        } else {
+            long days = hours / 24;
+            long remainingHours = hours % 24;
+            totalCost = parkingLot.getDailyRate().multiply(BigDecimal.valueOf(days))
+                    .add(parkingLot.getHourlyRate().multiply(BigDecimal.valueOf(remainingHours)));
+        }
+        session.setTotalCost(totalCost);
+        parkingSessionRepository.save(session);
+        PaymentHistory paymentHistory = PaymentHistory.builder()
+                .paymentStatus(PaymentStatus.PENDING)
+                .paymentMethod("CASH")
+                .sessionId(session.getId())
+                .amount(totalCost)
+                .build();
+        paymentHistoryRepository.save(paymentHistory);
+        return totalCost;
+    }
+
+    /**
+     * Tạo phiên gửi xe mới dành riêng cho member (kiểm tra thẻ thành viên trước)
+     */
+    @Transactional
+    public ParkingSessionDTO createMemberEntrySession(ParkingSessionRequest parkingSessionRequest, MultipartFile image)
+            throws DataNotFoundException, IOException, InvalidOperationException {
+        // Lấy thông tin bãi đỗ xe
+        ParkingLot parkingLot = parkingLotRepository.findById(parkingSessionRequest.getLotId())
+                .orElseThrow(() -> new DataNotFoundException(
+                        "Bãi đỗ xe không tồn tại với ID: " + parkingSessionRequest.getLotId()));
+        if (parkingLot.getAvailableSlots() <= 0) {
+            throw new InvalidOperationException("Bãi đỗ xe đã hết chỗ");
+        }
+
+        // Tìm member theo member code
+        Member member = memberRepository.findByMemberCode(parkingSessionRequest.getMemberCode())
+                .orElseThrow(() -> new DataNotFoundException(
+                "Khong ton tai member voi member code: " + parkingSessionRequest.getMemberCode()));
+        // Tìm phương tiện theo biển số
+        Vehicle vehicle = vehicleRepository.findByLicensePlate(parkingSessionRequest.getLicensePlate())
+                .orElseThrow(() -> new DataNotFoundException(
+                        "Không tìm thấy xe với biển số: " + parkingSessionRequest.getLicensePlate()));
+
+        // Kiem tra xe co thuoc member khong
+        if(!member.getVehicles().contains(vehicle)){
+            throw new InvalidOperationException(
+                    "Xe không thuộc về thành viên voi member code: " + parkingSessionRequest.getMemberCode());
+        }
+        // Kiểm tra xe có thuộc về member đang hoạt động không
+        if (!isVehicleOwnedByActiveMember(member)) {
+            throw new InvalidOperationException(
+                    "Xe không thuộc về thành viên có thẻ đang hoạt động. Vui lòng sử dụng API check-in thông thường.");
+        }
+        // Kiểm tra xem xe đã có phiên gửi xe đang hoạt động chưa
+        boolean hasActiveSession = parkingSessionRepository.findActiveSessionByVehicleId(vehicle.getId()).isPresent();
+        if (hasActiveSession) {
+            throw new InvalidOperationException("Xe đã có phiên gửi xe đang hoạt động");
+        }
+        // Tạo phiên gửi xe mới với phí = 0 (đã đóng phí thành viên)
+        ParkingSession session = new ParkingSession();
+        session.setLicensePlate(vehicle.getLicensePlate());
+        session.setLot(parkingLot);
+        session.setVehicleId(vehicle.getId());
+        session.setEntryTime(LocalDateTime.now());
+        session.setLicensePlateImageEntry(cloudinaryService.storeFile(image));
+        session.setStatus("ACTIVE");
+        session.setCreatedAt(LocalDateTime.now());
+        session.setUpdatedAt(LocalDateTime.now());
+        session.setCode(null);
+        session.setMemberId(member.getId());
+        session.setTotalCost(BigDecimal.ZERO); // Member không thu phí theo lượt
+        ParkingSession savedSession = parkingSessionRepository.save(session);
+        // Cập nhật số lượng chỗ trống
+        parkingLot.setAvailableSlots(parkingLot.getAvailableSlots() - 1);
+        parkingLotRepository.save(parkingLot);
+        log.info("Member check-in: vehicle {} entered lot {}", vehicle.getLicensePlate(), parkingLot.getId());
+        return convertToDTO(savedSession);
+    }
+
+    /**
+     * Hoàn thành phiên gửi xe dành riêng cho member (phí = 0, xác thực thẻ thành
+     * viên)
+     */
+    @Transactional
+    public ParkingSessionDTO completeMemberExitSession(ParkingSessionRequest parkingSessionRequest, MultipartFile licensePlateImage)
+            throws IOException, DataNotFoundException, InvalidOperationException {
+        // Tìm phiên gửi xe theo code
+
+        // Tìm member theo member code
+        Member member = memberRepository.findByMemberCode(parkingSessionRequest.getMemberCode())
+                .orElseThrow(() -> new DataNotFoundException(
+                        "Khong ton tai member voi member code: " + parkingSessionRequest.getMemberCode()));
+        // Tìm phương tiện theo biển số
+        Vehicle vehicle = vehicleRepository.findByLicensePlate(parkingSessionRequest.getLicensePlate())
+                .orElseThrow(() -> new DataNotFoundException(
+                        "Không tìm thấy xe với biển số: " + parkingSessionRequest.getLicensePlate()));
+
+        // Kiem tra xe co thuoc member khong
+        if(!member.getVehicles().contains(vehicle)){
+            throw new InvalidOperationException(
+                    "Xe không thuộc về thành viên voi member code: " + parkingSessionRequest.getMemberCode());
+        }
+        // Xác minh xe vẫn thuộc về member đang hoạt động
+        if (!isVehicleOwnedByActiveMember(member)) {
+            throw new InvalidOperationException(
+                    "Xe không thuộc về thành viên có thẻ đang hoạt động. Vui lòng sử dụng API check-out thông thường.");
+        }
+        ParkingSession session = parkingSessionRepository.findByMemberIdAndVehicle(member.getId(),vehicle.getId())
+                .orElseThrow(() -> new DataNotFoundException("Phiên gửi xe không tồn tại với member code: " + parkingSessionRequest.getMemberCode() + " và biển số : " + parkingSessionRequest.getLicensePlate() + "vehicleId: "+ vehicle.getId()));
+        if (!session.getStatus().equals("ACTIVE")) {
+            throw new InvalidOperationException("Phiên gửi xe đã kết thúc");
+        }
+        // Phí = 0 vì là member
+        LocalDateTime exitTime = LocalDateTime.now();
+        session.setExitTime(exitTime);
+        session.setLicensePlateImageExit(cloudinaryService.storeFile(licensePlateImage));
+        session.setStatus("COMPLETED");
+        session.setTotalCost(BigDecimal.ZERO);
+        session.setUpdatedAt(LocalDateTime.now());
+        ParkingSession savedSession = parkingSessionRepository.save(session);
+        // Cập nhật số lượng chỗ trống
         ParkingLot parkingLot = session.getLot();
         parkingLot.setAvailableSlots(parkingLot.getAvailableSlots() + 1);
         parkingLotRepository.save(parkingLot);
+        log.info("Member check-out: vehicle {} exited lot {}, totalCost=0", vehicle.getLicensePlate(),
+                parkingLot.getId());
         return convertToDTO(savedSession);
     }
 
     /**
      * Kiểm tra xem xe có thuộc về member có thẻ đang hoạt động không
      */
-    private boolean isVehicleOwnedByActiveMember(Vehicle vehicle) {
-        if (vehicle.getMember() == null) {
+    private boolean isVehicleOwnedByActiveMember(Member member) {
+        if(member==null){
             return false;
         }
-
-        var member = vehicle.getMember();
 
         // Kiểm tra member status là ACTIVE
         if (member.getMemberStatus() != MemberStatus.ACTIVE) {
@@ -385,7 +459,7 @@ public class ParkingService {
     private ParkingSessionDTO convertToDTO(ParkingSession session) {
         Vehicle vehicle = vehicleRepository.findById(session.getVehicleId()).orElse(null);
         String licensePlate = vehicle != null ? vehicle.getLicensePlate() : "Unknown";
-        boolean isMemberVehicle = vehicle != null && isVehicleOwnedByActiveMember(vehicle);
+        boolean isMemberVehicle = vehicle != null && isVehicleOwnedByActiveMember(vehicle.getMember());
 
         // Lấy memberCode từ Member model nếu xe thuộc member
         String memberCode = null;

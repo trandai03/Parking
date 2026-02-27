@@ -75,10 +75,11 @@ public class PaymentService {
 
         // Kiểm tra xem đã có payment pending cho invoice này chưa
         // paymentHistoryRepository
-        //         .findFirstByInvoiceIdAndPaymentStatusOrderByCreatedAtDesc(invoice.getId(), PaymentStatus.PENDING)
-        //         .ifPresent(existingPayment -> {
-        //             throw new IllegalStateException("Đã có giao dịch thanh toán đang chờ xử lý");
-        //         });
+        // .findFirstByInvoiceIdAndPaymentStatusOrderByCreatedAtDesc(invoice.getId(),
+        // PaymentStatus.PENDING)
+        // .ifPresent(existingPayment -> {
+        // throw new IllegalStateException("Đã có giao dịch thanh toán đang chờ xử lý");
+        // });
 
         String orderId = generateOrderId();
 
@@ -88,6 +89,7 @@ public class PaymentService {
                 .paymentMethod("MOMO")
                 .paymentStatus(PaymentStatus.PENDING)
                 .orderId(orderId)
+                .amount(invoice.getAmount())
                 .build();
 
         // Gọi MoMo API
@@ -99,6 +101,64 @@ public class PaymentService {
                 invoice.getMemberId(), orderId, invoice.getAmount());
 
         return savedPayment;
+    }
+
+    /**
+     * Tạo URL thanh toán MoMo cho phiên gửi xe (không cần memberId)
+     */
+    public String createParkingPaymentUrl(BigDecimal amount) {
+
+        String orderId = generateOrderId();
+        String orderInfo = "Thanh toan phi gui xe";
+        String extraData = "";
+        String requestId = UUID.randomUUID().toString().replace("-", "");
+        String requestType = "captureWallet";
+
+        String rawHash = "accessKey=" + accessKey +
+                "&amount=" + amount.longValue() +
+                "&extraData=" + extraData +
+                "&ipnUrl=" + ipnUrl +
+                "&orderId=" + orderId +
+                "&orderInfo=" + orderInfo +
+                "&partnerCode=" + partnerCode +
+                "&redirectUrl=" + redirectUrl +
+                "&requestId=" + requestId +
+                "&requestType=" + requestType;
+
+        String signature = hmacSHA256(rawHash, secretKey);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("partnerCode", partnerCode);
+        data.put("partnerName", "Parking Management");
+        data.put("storeId", "ParkingStore");
+        data.put("requestId", requestId);
+        data.put("amount", amount.longValue());
+        data.put("orderId", orderId);
+        data.put("orderInfo", orderInfo);
+        data.put("redirectUrl", redirectUrl);
+        data.put("ipnUrl", ipnUrl);
+        data.put("lang", "vi");
+        data.put("extraData", extraData);
+        data.put("requestType", requestType);
+        data.put("signature", signature);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(data, headers);
+
+
+
+        try {
+            ResponseEntity<Map> response = restTemplate.postForEntity(endPoint, entity, Map.class);
+            Map<String, Object> responseBody = response.getBody();
+            if (responseBody != null && responseBody.get("payUrl") != null) {
+                return responseBody.get("payUrl").toString();
+            }
+            throw new RuntimeException("Không thể tạo URL thanh toán MoMo");
+        } catch (Exception e) {
+            log.error("Error creating MoMo payment URL for parking", e);
+            throw new RuntimeException("Lỗi khi gọi MoMo API: " + e.getMessage());
+        }
     }
 
     /**
@@ -160,7 +220,7 @@ public class PaymentService {
      * Xử lý callback IPN từ MoMo
      */
     @Transactional
-    public void handleMoMoIPN( Map<String, Object> payload) {
+    public void handleMoMoIPN(Map<String, Object> payload) {
         log.info("Processing MoMo IPN for member: {}", payload);
 
         // Verify signature từ MoMo
@@ -181,11 +241,11 @@ public class PaymentService {
                         () -> new RuntimeException("Không tìm thấy hóa đơn với ID: " + paymentHistory.getInvoiceId()));
 
         // Validate memberId khớp với invoice
-//        if (!invoice.getMemberId().equals(memberId)) {
-//            log.error("MemberId mismatch: URL memberId={}, invoice memberId={}",
-//                    memberId, invoice.getMemberId());
-//            throw new SecurityException("MemberId không khớp với hóa đơn");
-//        }
+        // if (!invoice.getMemberId().equals(memberId)) {
+        // log.error("MemberId mismatch: URL memberId={}, invoice memberId={}",
+        // memberId, invoice.getMemberId());
+        // throw new SecurityException("MemberId không khớp với hóa đơn");
+        // }
 
         // Kiểm tra payment chưa được xử lý
         if (paymentHistory.getPaymentStatus() != PaymentStatus.PENDING) {
@@ -222,62 +282,63 @@ public class PaymentService {
             // Gửi email xác nhận
             sendPaymentConfirmationEmail(member, invoice);
 
-//            log.info("Payment completed for member {}, expiry: {}", memberId, member.getMembershipExpiryDate());
+            // log.info("Payment completed for member {}, expiry: {}", memberId,
+            // member.getMembershipExpiryDate());
         } else {
             // Thanh toán thất bại
             paymentHistory.setPaymentStatus(PaymentStatus.FAILED);
             paymentHistoryRepository.save(paymentHistory);
 
-//            log.warn("Payment failed for member {}: resultCode={}", memberId, resultCode);
+            // log.warn("Payment failed for member {}: resultCode={}", memberId,
+            // resultCode);
         }
     }
 
     public PaymentHistory confirmPaymentSuccess(Long paymentId) throws DataNotFoundException {
         PaymentHistory payment = paymentHistoryRepository.findById(paymentId)
                 .orElseThrow(() -> new DataNotFoundException("Payment không tồn tại với ID: " + paymentId));
-        
+
         if (payment.getPaymentStatus() != PaymentStatus.PENDING) {
             throw new IllegalStateException("Payment không ở trạng thái chờ xử lý");
         }
         Invoice invoice = invoiceRepository.findById(payment.getInvoiceId())
                 .orElseThrow(
                         () -> new RuntimeException("Không tìm thấy hóa đơn với ID: " + payment.getInvoiceId()));
-        
-        
+
         if (payment.getPaymentStatus() != PaymentStatus.PENDING) {
             log.warn("Payment {} already processed with status {}", paymentId, payment.getPaymentStatus());
-            throw new IllegalStateException("Payment already processed with status "+ payment.getPaymentStatus());
+            throw new IllegalStateException("Payment already processed with status " + payment.getPaymentStatus());
 
         }
-            payment.setPaymentStatus(PaymentStatus.COMPLETED);
-            payment.setPaymentTime(LocalDateTime.now());
-            paymentHistoryRepository.save(payment);
+        payment.setPaymentStatus(PaymentStatus.COMPLETED);
+        payment.setPaymentTime(LocalDateTime.now());
+        paymentHistoryRepository.save(payment);
 
-            // Cập nhật Invoice
-            invoice.setStatus(InvoiceStatus.PAID);
-            invoice.setPaidAt(LocalDateTime.now());
-            invoiceRepository.save(invoice);
+        // Cập nhật Invoice
+        invoice.setStatus(InvoiceStatus.PAID);
+        invoice.setPaidAt(LocalDateTime.now());
+        invoiceRepository.save(invoice);
 
-            // Cập nhật trạng thái member
-            Member member = memberRepository.findById(invoice.getMemberId())
-                    .orElseThrow(() -> new RuntimeException("Member không tồn tại"));
-            member.setMemberStatus(MemberStatus.ACTIVE);
-            LocalDateTime startDate = LocalDateTime.now();
-            member.setMembershipStartDate(startDate);
+        // Cập nhật trạng thái member
+        Member member = memberRepository.findById(invoice.getMemberId())
+                .orElseThrow(() -> new RuntimeException("Member không tồn tại"));
+        member.setMemberStatus(MemberStatus.ACTIVE);
+        LocalDateTime startDate = LocalDateTime.now();
+        member.setMembershipStartDate(startDate);
 
-            // Tính toán ngày hết hạn dựa trên plan duration
-            Integer durationMonths = member.getParkingPlan().getDurationMonths();
-            if (durationMonths == null || durationMonths <= 0) {
-                durationMonths = 1;
-            }
-            member.setMembershipExpiryDate(startDate.plusMonths(durationMonths));
-            memberRepository.save(member);
+        // Tính toán ngày hết hạn dựa trên plan duration
+        Integer durationMonths = member.getParkingPlan().getDurationMonths();
+        if (durationMonths == null || durationMonths <= 0) {
+            durationMonths = 1;
+        }
+        member.setMembershipExpiryDate(startDate.plusMonths(durationMonths));
+        memberRepository.save(member);
 
-            // Gửi email xác nhận
-            sendPaymentConfirmationEmail(member, invoice);
+        // Gửi email xác nhận
+        sendPaymentConfirmationEmail(member, invoice);
 
-            log.info("Payment completed for member {}, expiry: {}", member.getId(), member.getMembershipExpiryDate());
-            return payment;
+        log.info("Payment completed for member {}, expiry: {}", member.getId(), member.getMembershipExpiryDate());
+        return payment;
     }
 
     /**
@@ -332,6 +393,7 @@ public class PaymentService {
                 .paymentStatus(PaymentStatus.COMPLETED)
                 .orderId(generateOrderId())
                 .processedByUserId(processedByUserId)
+                .amount(invoice.getAmount())
                 .paymentTime(LocalDateTime.now())
                 .build();
 

@@ -60,6 +60,9 @@ public class ParkingSession {
     @Column(name = "total_cost", precision = 10, scale = 2)
     private BigDecimal totalCost;
 
+    @Column(name="member_id")
+    private Long memberId;
+
     @ColumnDefault("CURRENT_TIMESTAMP")
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -70,5 +73,8 @@ public class ParkingSession {
 
     @Column(name="code")
     private Integer code;
+
+    @Column(name = "license_plate", nullable = false, length = 20)
+    private String licensePlate;
 
 }

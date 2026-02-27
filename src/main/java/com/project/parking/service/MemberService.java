@@ -148,6 +148,8 @@ public class MemberService {
             member.setMembershipFee(fee);
             member.setRoomNumber(request.getRoomNumber());
             member.setMemberStatus(MemberStatus.PENDING);
+            member.setLockedAt(null);
+            member.setLockReason(null);
         } else {
             member = Member.builder()
                     .user(user)

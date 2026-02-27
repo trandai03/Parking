@@ -114,4 +114,10 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
          */
         @Query("SELECT SUM(i.amount) FROM Invoice i WHERE i.status = :status")
         java.math.BigDecimal sumAmountByStatus(@Param("status") InvoiceStatus status);
+
+
+        @Query("SELECT i FROM Invoice i order by i.id desc")
+        List<Invoice> findAllInvoices();
+
+
 }

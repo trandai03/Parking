@@ -47,5 +47,8 @@ public interface ParkingSessionRepository extends JpaRepository<ParkingSession, 
     @Query("SELECT ps FROM ParkingSession ps order by ps.entryTime DESC")
     List<ParkingSession> findAll();
 
+    @Query("SELECT ps FROM ParkingSession ps WHERE ps.memberId = :memberId AND ps.vehicleId = :vehicleId AND ps.status = 'ACTIVE'" )
+    Optional<ParkingSession> findByMemberIdAndVehicle(@Param("memberId") Long memberId,@Param("vehicleId") Long vehicleId);
+
     
 }

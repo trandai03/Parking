@@ -34,6 +34,8 @@ public interface PaymentHistoryRepository extends JpaRepository<PaymentHistory, 
          */
         Optional<PaymentHistory> findByOrderId(String orderId);
 
+        Optional<PaymentHistory> findBySessionId(Long sessionId);
+
         /**
          * JOIN với Invoice để lấy lịch sử thanh toán của member
          */

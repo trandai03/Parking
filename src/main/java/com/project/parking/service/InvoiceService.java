@@ -207,7 +207,7 @@ public class InvoiceService {
      * Lấy tất cả hóa đơn
      */
     public List<Invoice> getAllInvoices() {
-        return invoiceRepository.findAll();
+        return invoiceRepository.findAllInvoices();
     }
 
     /**

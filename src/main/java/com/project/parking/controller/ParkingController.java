@@ -7,6 +7,7 @@ import com.project.parking.exceptions.DataNotFoundException;
 import com.project.parking.exceptions.InvalidOperationException;
 import com.project.parking.service.LicensePlateRecognitionService;
 import com.project.parking.service.ParkingService;
+import com.project.parking.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +36,7 @@ public class ParkingController {
 
         private final ParkingService parkingService;
         private final LicensePlateRecognitionService recognitionService;
+        private final PaymentService paymentService;
 
         @Operation(summary = "Lấy danh sách tất cả phiên gửi xe", description = "API này dùng để lấy danh sách tất cả các phiên gửi xe trong hệ thống.")
         @ApiResponses(value = {
@@ -143,11 +146,70 @@ public class ParkingController {
         })
         @PostMapping(value = "/exit/{code}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
         public ResponseEntity<ParkingSessionDTO> confirmExitSession(@PathVariable Integer code,
-                        @RequestPart("image") MultipartFile image, @RequestPart("licensePlate") String licensePlate)
+                        @RequestPart("image") MultipartFile image, @RequestPart("licensePlate") String licensePlate,@RequestPart("paymentMethod") String paymentMethod )
                         throws DataNotFoundException, InvalidOperationException, IOException {
                 // Sử dụng ParkingService để hoàn thành phiên gửi xe
                 ParkingSessionDTO session = parkingService.completeExitSessionWithRecognition(code, image,
-                                licensePlate);
+                                licensePlate,paymentMethod);
+                return ResponseEntity.ok(session);
+        }
+
+        @Operation(summary = "Tính tiền phiên gửi xe", description = "API tính tiền phiên gửi xe. Nếu paymentMethod=CASH trả về số tiền, nếu paymentMethod=MOMO trả về link thanh toán MoMo kèm số tiền.")
+        @ApiResponses(value = {
+                        @ApiResponse(responseCode = "200", description = "Tính tiền thành công"),
+                        @ApiResponse(responseCode = "400", description = "Phương thức thanh toán không hợp lệ"),
+                        @ApiResponse(responseCode = "404", description = "Không tìm thấy phiên gửi xe với code đã cho")
+        })
+        @GetMapping(value = "/payment/{code}")
+        public ResponseEntity<?> getPayment(
+                        @PathVariable Integer code,
+                        @RequestParam String paymentMethod)
+                        throws DataNotFoundException, InvalidOperationException, IOException {
+                BigDecimal totalCost = parkingService.caculateTotalCost(code);
+                if ("CASH".equalsIgnoreCase(paymentMethod)) {
+                        return ResponseEntity.ok(Map.of(
+                                        "paymentMethod", "CASH",
+                                        "totalCost", totalCost));
+                } else if ("MOMO".equalsIgnoreCase(paymentMethod)) {
+                        String paymentUrl = paymentService.createParkingPaymentUrl(totalCost);
+                        return ResponseEntity.ok(Map.of(
+                                        "paymentMethod", "MOMO",
+                                        "totalCost", totalCost,
+                                        "paymentUrl", paymentUrl));
+                } else {
+                        return ResponseEntity.badRequest().body(Map.of(
+                                        "error", "Phương thức thanh toán không hợp lệ: " + paymentMethod
+                                                        + ". Chỉ hỗ trợ CASH hoặc MOMO."));
+                }
+        }
+
+        @Operation(summary = "Check-in dành cho thành viên", description = "API này dùng để xử lý khi xe của thành viên vào bãi đỗ xe. Hệ thống sẽ xác minh xe thuộc về thành viên có thẻ đang hoạt động trước khi tạo phiên gửi xe với phí = 0.")
+        @ApiResponses(value = {
+                        @ApiResponse(responseCode = "201", description = "Check-in thành viên thành công"),
+                        @ApiResponse(responseCode = "400", description = "Xe không thuộc về thành viên hoặc thẻ đã hết hạn"),
+                        @ApiResponse(responseCode = "404", description = "Không tìm thấy xe hoặc bãi đỗ xe")
+        })
+        @PostMapping(value = "/member/entry", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        public ResponseEntity<ParkingSessionDTO> createMemberEntrySession(
+                        @RequestPart("data") ParkingSessionRequest parkingSessionRequest,
+                        @RequestPart("image") MultipartFile image)
+                        throws IOException, DataNotFoundException, InvalidOperationException {
+                ParkingSessionDTO session = parkingService.createMemberEntrySession(parkingSessionRequest, image);
+                return new ResponseEntity<>(session, HttpStatus.CREATED);
+        }
+
+        @Operation(summary = "Check-out dành cho thành viên", description = "API này dùng để xử lý khi xe của thành viên ra khỏi bãi đỗ xe. Phí gửi xe sẽ là 0 vì thành viên đã đóng phí định kỳ.")
+        @ApiResponses(value = {
+                        @ApiResponse(responseCode = "200", description = "Check-out thành viên thành công"),
+                        @ApiResponse(responseCode = "400", description = "Xe không thuộc về thành viên hoặc biển số không khớp"),
+                        @ApiResponse(responseCode = "404", description = "Không tìm thấy phiên gửi xe với code đã cho")
+        })
+        @PostMapping(value = "/member/exit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        public ResponseEntity<ParkingSessionDTO> confirmMemberExitSession(
+                        @RequestPart("data") ParkingSessionRequest parkingSessionRequest,
+                        @RequestPart("image") MultipartFile image)
+                        throws DataNotFoundException, InvalidOperationException, IOException {
+                ParkingSessionDTO session = parkingService.completeMemberExitSession(parkingSessionRequest, image);
                 return ResponseEntity.ok(session);
         }
 

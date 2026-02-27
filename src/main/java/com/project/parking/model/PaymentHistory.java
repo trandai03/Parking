@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -28,7 +29,7 @@ public class PaymentHistory {
     private Long id;
 
     // ID-based relationship với Invoice
-    @NotNull
+
     @Column(name = "invoice_id", nullable = false)
     private Long invoiceId;
 
@@ -53,8 +54,14 @@ public class PaymentHistory {
     @Column(name = "processed_by_user_id")
     private Long processedByUserId;
 
+    @Column(name = "amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal amount;
+
     @Column(name = "payment_time")
     private LocalDateTime paymentTime;
+
+    @Column(name = "session_id", nullable = false)
+    private Long sessionId;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
