@@ -214,8 +214,8 @@ public class UserService {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
         // update user
-        if (userDTO.getFullname() != null) {
-            existingUser.setFullname(userDTO.getFullname());
+        if (userDTO.getFullName() != null) {
+            existingUser.setFullname(userDTO.getFullName());
         }
 
         if (userDTO.getPhoneNumber() != null) {

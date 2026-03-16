@@ -164,17 +164,16 @@ public class ParkingController {
         public ResponseEntity<?> getPayment(
                         @PathVariable Integer code,
                         @RequestParam String paymentMethod)
-                        throws DataNotFoundException, InvalidOperationException, IOException {
-                BigDecimal totalCost = parkingService.caculateTotalCost(code);
+                        throws DataNotFoundException, InvalidOperationException{
                 if ("CASH".equalsIgnoreCase(paymentMethod)) {
+                        BigDecimal totalCost = parkingService.processingPaymentCash(code);
                         return ResponseEntity.ok(Map.of(
                                         "paymentMethod", "CASH",
                                         "totalCost", totalCost));
                 } else if ("MOMO".equalsIgnoreCase(paymentMethod)) {
-                        String paymentUrl = paymentService.createParkingPaymentUrl(totalCost);
+                        String paymentUrl = parkingService.processingPaymentMomo(code);
                         return ResponseEntity.ok(Map.of(
                                         "paymentMethod", "MOMO",
-                                        "totalCost", totalCost,
                                         "paymentUrl", paymentUrl));
                 } else {
                         return ResponseEntity.badRequest().body(Map.of(
