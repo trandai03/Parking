@@ -165,21 +165,22 @@ public class ParkingController {
                         @PathVariable Integer code,
                         @RequestParam String paymentMethod)
                         throws DataNotFoundException, InvalidOperationException{
-                if ("CASH".equalsIgnoreCase(paymentMethod)) {
-                        BigDecimal totalCost = parkingService.processingPaymentCash(code);
-                        return ResponseEntity.ok(Map.of(
-                                        "paymentMethod", "CASH",
-                                        "totalCost", totalCost));
-                } else if ("MOMO".equalsIgnoreCase(paymentMethod)) {
-                        String paymentUrl = parkingService.processingPaymentMomo(code);
-                        return ResponseEntity.ok(Map.of(
-                                        "paymentMethod", "MOMO",
-                                        "paymentUrl", paymentUrl));
-                } else {
-                        return ResponseEntity.badRequest().body(Map.of(
-                                        "error", "Phương thức thanh toán không hợp lệ: " + paymentMethod
-                                                        + ". Chỉ hỗ trợ CASH hoặc MOMO."));
-                }
+//                if ("CASH".equalsIgnoreCase(paymentMethod)) {
+//                        BigDecimal totalCost = parkingService.processingPaymentCash(code);
+//                        return ResponseEntity.ok(Map.of(
+//                                        "paymentMethod", "CASH",
+//                                        "totalCost", totalCost));
+//                } else if ("MOMO".equalsIgnoreCase(paymentMethod)) {
+//                        String paymentUrl = parkingService.processingPaymentMomo(code);
+//                        return ResponseEntity.ok(Map.of(
+//                                        "paymentMethod", "MOMO",
+//                                        "paymentUrl", paymentUrl));
+//                } else {
+//                        return ResponseEntity.badRequest().body(Map.of(
+//                                        "error", "Phương thức thanh toán không hợp lệ: " + paymentMethod
+//                                                        + ". Chỉ hỗ trợ CASH hoặc MOMO."));
+//                }
+                return parkingService.processPayment(code, paymentMethod);
         }
 
         @Operation(summary = "Check-in dành cho thành viên", description = "API này dùng để xử lý khi xe của thành viên vào bãi đỗ xe. Hệ thống sẽ xác minh xe thuộc về thành viên có thẻ đang hoạt động trước khi tạo phiên gửi xe với phí = 0.")

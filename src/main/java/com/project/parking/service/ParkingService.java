@@ -12,6 +12,7 @@ import com.project.parking.model.*;
 import com.project.parking.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,6 +23,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -230,11 +232,19 @@ public class ParkingService {
         if (!vehicle.getLicensePlate().equalsIgnoreCase(licensePlate)) {
             throw new InvalidOperationException("Biển số xe không khớp với phiên gửi xe");
         }
-        PaymentHistory paymentHistory = paymentHistoryRepository.findBySessionId(session.getId())
-                .orElseThrow(() -> new DataNotFoundException("Lịch sử thanh toán không tồn tại với code: " + code));
-        paymentHistory.setPaymentStatus(PaymentStatus.COMPLETED);
-        paymentHistory.setPaymentTime(LocalDateTime.now());
-        paymentHistoryRepository.save(paymentHistory);
+        Optional<PaymentHistory> paymentHistory = paymentHistoryRepository.findBySessionId(session.getId());
+        if(paymentHistory.isEmpty() && session.getTotalCost().compareTo(BigDecimal.ZERO)!=0){
+
+                throw new DataNotFoundException("Lịch sử thanh toán không tồn tại với code: " + code);
+        }
+        if(paymentHistory.isPresent()){
+            PaymentHistory payment = paymentHistory.get();
+            payment.setPaymentStatus(PaymentStatus.COMPLETED);
+            payment.setPaymentTime(LocalDateTime.now());
+            paymentHistoryRepository.save(payment);
+        }
+
+
         ParkingLot parkingLot = session.getLot();
         LocalDateTime exitTime = LocalDateTime.now();
         // Cập nhật phiên gửi xe
@@ -272,40 +282,73 @@ public class ParkingService {
         return totalCost;
     }
 
-    public BigDecimal processingPaymentCash(Integer code) throws DataNotFoundException, InvalidOperationException {
+    public ResponseEntity<?> processPayment(Integer code, String paymentMethod) throws DataNotFoundException, InvalidOperationException {
         ParkingSession session = parkingSessionRepository.findByCode(code)
                 .orElseThrow(() -> new DataNotFoundException("Phiên gửi xe không tồn tại với code: " + code));
         if (!session.getStatus().equals("ACTIVE")) {
             throw new InvalidOperationException("Phiên gửi xe đã kết thúc");
         }
-        BigDecimal totalCost= caculateTotalCost(session);
-        PaymentHistory paymentHistory = PaymentHistory.builder()
-                .paymentStatus(PaymentStatus.PENDING)
-                .paymentMethod("CASH")
-                .sessionId(session.getId())
-                .amount(totalCost)
-                .build();
-        paymentHistoryRepository.save(paymentHistory);
-        return totalCost;
-    }
-
-    public String processingPaymentMomo(Integer code) throws InvalidOperationException, DataNotFoundException {
-        ParkingSession session = parkingSessionRepository.findByCode(code)
-                .orElseThrow(() -> new DataNotFoundException("Phiên gửi xe không tồn tại với code: " + code));
-        if (!session.getStatus().equals("ACTIVE")) {
-            throw new InvalidOperationException("Phiên gửi xe đã kết thúc");
+        if(session.getEntryTime().plusMinutes(10).isAfter(LocalDateTime.now())) {
+            session.setTotalCost(BigDecimal.ZERO);
+            parkingSessionRepository.save(session);
+            return ResponseEntity.ok(0);
         }
         BigDecimal totalCost= caculateTotalCost(session);
-        PaymentHistory paymentHistory = PaymentHistory.builder()
-                .paymentStatus(PaymentStatus.PENDING)
-                .paymentMethod("MOMO")
-                .sessionId(session.getId())
-                .amount(totalCost)
-                .build();
-        paymentHistoryRepository.save(paymentHistory);
-        return paymentService.createParkingPaymentUrl(totalCost);
-
+        if (paymentMethod.equalsIgnoreCase("CASH")) {
+            PaymentHistory paymentHistory = PaymentHistory.builder()
+                    .paymentStatus(PaymentStatus.PENDING)
+                    .paymentMethod("CASH")
+                    .sessionId(session.getId())
+                    .amount(totalCost)
+                    .build();
+            paymentHistoryRepository.save(paymentHistory);
+                        return ResponseEntity.ok(Map.of(
+                                        "paymentMethod", "CASH",
+                                        "totalCost", totalCost));
+        } else if (paymentMethod.equalsIgnoreCase("MOMO")) {
+            PaymentHistory paymentHistory = PaymentHistory.builder()
+                    .paymentStatus(PaymentStatus.PENDING)
+                    .paymentMethod("MOMO")
+                    .sessionId(session.getId())
+                    .amount(totalCost)
+                    .build();
+            paymentHistoryRepository.save(paymentHistory);
+            String paymentUrl= paymentService.createParkingPaymentUrl(totalCost);
+                        return ResponseEntity.ok(Map.of(
+                                        "paymentMethod", "MOMO",
+                                        "paymentUrl", paymentUrl));
+        } else {
+                        return ResponseEntity.badRequest().body(Map.of(
+                                        "error", "Phương thức thanh toán không hợp lệ: " + paymentMethod
+                                                        + ". Chỉ hỗ trợ CASH hoặc MOMO."));
+                }
     }
+
+//    public BigDecimal processingPaymentCash(ParkingSession session) throws DataNotFoundException, InvalidOperationException {
+//
+//
+//        PaymentHistory paymentHistory = PaymentHistory.builder()
+//                .paymentStatus(PaymentStatus.PENDING)
+//                .paymentMethod("CASH")
+//                .sessionId(session.getId())
+//                .amount(totalCost)
+//                .build();
+//        paymentHistoryRepository.save(paymentHistory);
+//        return totalCost;
+//    }
+
+//    public String processingPaymentMomo(ParkingSession session) throws InvalidOperationException, DataNotFoundException {
+//        BigDecimal totalCost= caculateTotalCost(session);
+//        PaymentHistory paymentHistory = PaymentHistory.builder()
+//                .paymentStatus(PaymentStatus.PENDING)
+//                .paymentMethod("MOMO")
+//                .sessionId(session.getId())
+//                .amount(totalCost)
+//                .build();
+//        paymentHistoryRepository.save(paymentHistory);
+//        return paymentService.createParkingPaymentUrl(totalCost);
+//
+//    }
 
     /**
      * Tạo phiên gửi xe mới dành riêng cho member (kiểm tra thẻ thành viên trước)
